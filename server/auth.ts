@@ -48,3 +48,32 @@ export function getSessionUser(req: Request): SessionUser | null {
     return null;
   }
 }
+
+// Basic brute-force guard on login. In-memory (single process) is fine for
+// this small internal tool; if this ever runs multi-process, move to Postgres.
+const MAX_ATTEMPTS = 8;
+const WINDOW_MS = 10 * 60 * 1000;
+const attempts = new Map<string, { count: number; firstAttemptAt: number }>();
+
+export function isLoginRateLimited(key: string): boolean {
+  const entry = attempts.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.firstAttemptAt > WINDOW_MS) {
+    attempts.delete(key);
+    return false;
+  }
+  return entry.count >= MAX_ATTEMPTS;
+}
+
+export function recordLoginFailure(key: string) {
+  const entry = attempts.get(key);
+  if (!entry || Date.now() - entry.firstAttemptAt > WINDOW_MS) {
+    attempts.set(key, { count: 1, firstAttemptAt: Date.now() });
+  } else {
+    entry.count += 1;
+  }
+}
+
+export function clearLoginFailures(key: string) {
+  attempts.delete(key);
+}

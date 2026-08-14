@@ -1,9 +1,9 @@
 /**
  * Quiet Operations Desk: account worklist, a current decision surface, and an evidence context stay visible together.
- * Wired to real company/meeting data via /api/companies.
+ * Wired to real company/meeting/deal/contact data via /api/companies.
  */
 import { Button } from "@/components/ui/button";
-import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, CircleAlert, CopyPlus, FileText, MoreHorizontal, Plus, Search, Sparkles } from "lucide-react";
+import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, CircleAlert, CopyPlus, FileText, MoreHorizontal, Plus, Search, Sparkles, Trash2, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -24,7 +24,17 @@ type MeetingNote = {
   contact: string | null;
   content: string | null;
   proposal: string | null;
+  summary_id: string | null;
+  summary: string | null;
+  issue: string | null;
+  budget: string | null;
+  decision_maker: string | null;
+  timeline: string | null;
+  summary_status: "draft" | "approved" | null;
 };
+
+type Deal = { id: string; name: string; stage: string; amount: number | null; status: string };
+type Contact = { id: string; name: string; title: string | null };
 
 function Status({ children, tone = "neutral" }: { children: string; tone?: "neutral" | "navy" | "moss" | "ochre" | "danger" }) {
   return <span className={`enterprise-status ${tone}`}>{children}</span>;
@@ -37,12 +47,18 @@ function categoryTone(category: string): "neutral" | "navy" | "moss" | "ochre" |
   return "neutral";
 }
 
+const DEAL_STAGES = ["初回接触", "提案", "交渉", "クロージング", "成約", "失注"];
+
 export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen: ScreenTarget) => void }) {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<{ company: Company; meetings: MeetingNote[] } | null>(null);
+  const [detail, setDetail] = useState<{ company: Company; meetings: MeetingNote[]; deals: Deal[]; contacts: Contact[] } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [newDealName, setNewDealName] = useState("");
+  const [newDealStage, setNewDealStage] = useState(DEAL_STAGES[0]);
+  const [newContactName, setNewContactName] = useState("");
+  const [newContactTitle, setNewContactTitle] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -58,15 +74,54 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  useEffect(() => {
+  const reloadDetail = () => {
     if (!selectedId) return;
     fetch(`/api/companies/${selectedId}`, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => setDetail(data))
       .catch(() => toast.error("取引先の詳細取得に失敗しました"));
-  }, [selectedId]);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(reloadDetail, [selectedId]);
 
   const latestMeeting = useMemo(() => detail?.meetings?.[0] ?? null, [detail]);
+  const latestApprovedSummary = useMemo(
+    () => detail?.meetings?.find((m) => m.summary_status === "approved") ?? null,
+    [detail]
+  );
+
+  const addDeal = async () => {
+    if (!selectedId || !newDealName.trim()) return toast.error("商談名を入力してください");
+    await fetch(`/api/companies/${selectedId}/deals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ name: newDealName, stage: newDealStage }),
+    });
+    setNewDealName("");
+    reloadDetail();
+    toast.success("商談を登録しました");
+  };
+
+  const addContact = async () => {
+    if (!selectedId || !newContactName.trim()) return toast.error("担当者名を入力してください");
+    await fetch(`/api/companies/${selectedId}/contacts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ name: newContactName, title: newContactTitle || null }),
+    });
+    setNewContactName("");
+    setNewContactTitle("");
+    reloadDetail();
+    toast.success("担当者を登録しました");
+  };
+
+  const removeContact = async (id: string) => {
+    await fetch(`/api/contacts/${id}`, { method: "DELETE", credentials: "include" });
+    reloadDetail();
+  };
 
   return <section className="screen-page enterprise-workspace account-workspace">
     <header className="enterprise-page-head"><div><p className="eyebrow">ACCOUNTS · CUSTOMER WORKSPACE</p><h1>取引先の判断を、<br />一つの文脈で進める。</h1><p>過去の商談記録を、取引先ごとの作業面に集約します。</p></div><div className="enterprise-head-actions"><Button className="ink-button" onClick={() => toast.success("取引先登録フォームを開きました")}><Plus size={16} />取引先を登録</Button></div></header>
@@ -83,10 +138,20 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
 
         <section className="account-facts"><div><span>区分</span><b>{detail.company.category}</b><small>&nbsp;</small></div><div><span>商談件数</span><b>{detail.company.meeting_count}件</b><small>&nbsp;</small></div><div><span>最終商談</span><b>{latestMeeting?.meeting_date ?? "―"}</b><small>{latestMeeting?.format ?? ""}</small></div><div><span>登録済み旧表記</span><b>{detail.company.name_variants.length}件</b><small>&nbsp;</small></div></section>
 
-        <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">MEETING HISTORY</span><h3>過去の商談履歴</h3></div><span>{detail.meetings.length}件</span></div><div className="activity-ledger">{detail.meetings.length === 0 && <p className="queue-empty">商談記録がありません。</p>}{detail.meetings.slice(0, 10).map((m, i) => <article key={m.id}><span className="activity-index">{String(i + 1).padStart(2, "0")}</span><div><b>{m.contact ? `${m.contact}` : "商談"}{m.format ? `（${m.format}）` : ""}</b><p>{m.content ? m.content.slice(0, 160) : "内容の記録はありません。"}</p><small>{m.meeting_date ?? "日付不明"}</small></div><Status tone="neutral">商談</Status></article>)}</div></section>
+        <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">DEALS</span><h3>商談</h3></div><span>{detail.deals.length}件</span></div><div className="activity-ledger">{detail.deals.length === 0 && <p className="queue-empty">商談はまだ登録されていません。</p>}{detail.deals.map((d) => <article key={d.id}><div><b>{d.name}</b><p>{d.amount ? `¥${Number(d.amount).toLocaleString()}` : "金額未設定"}</p></div><Status tone={d.stage === "成約" ? "moss" : d.stage === "失注" ? "danger" : "navy"}>{d.stage}</Status></article>)}<div style={{ display: "flex", gap: 6, padding: "10px 0" }}><input placeholder="商談名" value={newDealName} onChange={(e) => setNewDealName(e.target.value)} style={{ flex: 1, border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }} /><select value={newDealStage} onChange={(e) => setNewDealStage(e.target.value)} style={{ border: "1px solid #dedbd2", borderRadius: 6, fontSize: 12 }}>{DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select><button className="context-link" onClick={addDeal}>追加</button></div></div></section>
+
+        <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">MEETING HISTORY</span><h3>過去の商談履歴</h3></div><span>{detail.meetings.length}件</span></div><div className="activity-ledger">{detail.meetings.length === 0 && <p className="queue-empty">商談記録がありません。</p>}{detail.meetings.slice(0, 10).map((m, i) => <article key={m.id}><span className="activity-index">{String(i + 1).padStart(2, "0")}</span><div><b>{m.contact ? `${m.contact}` : "商談"}{m.format ? `（${m.format}）` : ""}</b><p>{m.content ? m.content.slice(0, 160) : "内容の記録はありません。"}</p><small>{m.meeting_date ?? "日付不明"}</small></div><Status tone={m.summary_status === "approved" ? "moss" : "neutral"}>{m.summary_status === "approved" ? "確定済み" : "商談"}</Status></article>)}</div></section>
       </main>
 
-      <aside className="context-column"><section className="context-card qualification-card"><div className="context-heading"><div><span className="eyebrow">DECISION EVIDENCE</span><h3>確認状況</h3></div><CircleAlert size={16} /></div><p className="context-intro">課題・予算・決裁・時期のヒアリング項目は、まだこの取引先では構造化されていません。議事録を整理すると、ここに確認済み事実として蓄積されます。</p><button className="context-link" onClick={() => onNavigate("meetings")}>議事録を整理する <ArrowUpRight size={15} /></button></section><section className="context-card data-integrity-card"><div className="context-heading"><div><span className="eyebrow">DATA INTEGRITY</span><h3>顧客情報の状態</h3></div><CheckCircle2 size={16} /></div><div className="integrity-line"><span>表記ゆれ統合済み</span><b>{detail.company.name_variants.length}件</b></div><div className="integrity-line"><span>区分</span><b>{detail.company.category}</b></div><button className="context-link" onClick={() => toast.info("データ品質の詳細を開きました")}>品質を確認する <ArrowUpRight size={15} /></button></section><section className="context-card meeting-context"><div className="context-heading"><div><span className="eyebrow">NEXT STEP</span><h3>打ち合わせ準備</h3></div><Sparkles size={16} /></div><p>この取引先との次回打ち合わせ準備メモを生成できます。</p><button className="context-link" onClick={() => onNavigate("briefing")}>準備メモを開く <ArrowUpRight size={15} /></button></section></aside>
+      <aside className="context-column">
+        <section className="context-card qualification-card"><div className="context-heading"><div><span className="eyebrow">DECISION EVIDENCE</span><h3>確認状況</h3></div><CircleAlert size={16} /></div>{latestApprovedSummary ? <div className="qualification-grid"><div><span>課題</span><b>{latestApprovedSummary.issue || "未確認"}</b></div><div><span>予算</span><b>{latestApprovedSummary.budget || "未確認"}</b></div><div><span>決裁</span><b>{latestApprovedSummary.decision_maker || "未確認"}</b></div><div><span>時期</span><b>{latestApprovedSummary.timeline || "未確認"}</b></div></div> : <p className="context-intro">課題・予算・決裁・時期のヒアリング項目は、まだこの取引先では確定していません。議事録を整理すると、ここに確認済み事実として蓄積されます。</p>}<button className="context-link" onClick={() => onNavigate("meetings")}>議事録を整理する <ArrowUpRight size={15} /></button></section>
+
+        <section className="context-card"><div className="context-heading"><div><span className="eyebrow">CONTACTS</span><h3>担当者</h3></div><UserRound size={16} /></div>{detail.contacts.length === 0 && <p className="context-intro">担当者はまだ登録されていません。</p>}{detail.contacts.map((c) => <div className="integrity-line" key={c.id}><span>{c.name}{c.title ? `（${c.title}）` : ""}</span><button onClick={() => removeContact(c.id)} aria-label="削除"><Trash2 size={13} /></button></div>)}<div style={{ display: "flex", gap: 6, marginTop: 8 }}><input placeholder="氏名" value={newContactName} onChange={(e) => setNewContactName(e.target.value)} style={{ flex: 1, border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }} /><input placeholder="役職" value={newContactTitle} onChange={(e) => setNewContactTitle(e.target.value)} style={{ width: 80, border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }} /><button className="context-link" onClick={addContact}>追加</button></div></section>
+
+        <section className="context-card data-integrity-card"><div className="context-heading"><div><span className="eyebrow">DATA INTEGRITY</span><h3>顧客情報の状態</h3></div><CheckCircle2 size={16} /></div><div className="integrity-line"><span>表記ゆれ統合済み</span><b>{detail.company.name_variants.length}件</b></div><div className="integrity-line"><span>区分</span><b>{detail.company.category}</b></div></section>
+
+        <section className="context-card meeting-context"><div className="context-heading"><div><span className="eyebrow">NEXT STEP</span><h3>打ち合わせ準備</h3></div><Sparkles size={16} /></div><p>この取引先との次回打ち合わせ準備メモを生成できます。</p><button className="context-link" onClick={() => onNavigate("briefing")}>準備メモを開く <ArrowUpRight size={15} /></button></section>
+      </aside>
       </> : <main className="decision-column"><p className="queue-empty">{loading ? "読み込み中..." : "取引先を選択してください。"}</p></main>}
     </div>
   </section>;
