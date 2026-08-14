@@ -1,9 +1,19 @@
 /**
  * Automation-first Relay: the default surface shows only work that has been prepared automatically and needs a human decision.
  */
-import { ArrowUpRight, CheckCircle2, ChevronRight, CircleCheck, Clock3, EyeOff, FileText, Inbox, ListChecks, RefreshCw, Sparkles, UserRound } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, ChevronRight, CircleCheck, Clock3, EyeOff, FileText, Inbox, ListChecks, RefreshCw, RotateCcw, Sparkles, UserRound } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+
+const CURRENT_ACTOR = "佐々木 瑞希";
+const DEFAULT_SNOOZE_DAYS = 7;
+const DEFAULT_DISMISS_REASON = "現在は対応不要のため見送り";
+
+type DismissRecord = { reason: string; actor: string; dismissedAt: string; snoozeUntil: string };
+
+function formatDate(d: Date) {
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 type ScreenTarget = "overview" | "inbounds" | "accounts" | "meetings" | "briefing" | "knowledge" | "actions" | "renewals";
 type QueueItem = { id: string; type: "議事録" | "問い合わせ" | "期限" | "更新"; company: string; title: string; detail: string; time: string; state: string; tone: "blue" | "amber" | "red" | "green"; target: ScreenTarget };
@@ -18,14 +28,22 @@ const queue: QueueItem[] = [
 function QueueStatus({ children, tone }: { children: string; tone: QueueItem["tone"] }) { return <span className={`automation-status ${tone}`}>{children}</span>; }
 
 export default function AutomationHub({ onNavigate }: { onNavigate: (screen: ScreenTarget) => void }) {
-  const [dismissed, setDismissed] = useState<string[]>([]);
-  const visibleQueue = queue.filter((item) => !dismissed.includes(item.id));
-  const dismiss = (id: string) => { setDismissed((ids) => [...ids, id]); toast.info("見送りにしました。対応が必要になれば、活動履歴から戻せます。"); };
+  const [dismissed, setDismissed] = useState<Record<string, DismissRecord>>({});
+  const visibleQueue = queue.filter((item) => !dismissed[item.id]);
+  const dismissedEntries = queue.filter((item) => dismissed[item.id]);
+  const dismiss = (id: string) => {
+    const now = new Date();
+    const snoozeUntil = new Date(now.getTime() + DEFAULT_SNOOZE_DAYS * 24 * 60 * 60 * 1000);
+    setDismissed((prev) => ({ ...prev, [id]: { reason: DEFAULT_DISMISS_REASON, actor: CURRENT_ACTOR, dismissedAt: formatDate(now), snoozeUntil: formatDate(snoozeUntil) } }));
+    toast.info(`見送りにしました。${formatDate(snoozeUntil)}に再表示されます。`);
+  };
+  const updateReason = (id: string, reason: string) => { setDismissed((prev) => ({ ...prev, [id]: { ...prev[id], reason } })); };
+  const restore = (id: string) => { setDismissed((prev) => { const next = { ...prev }; delete next[id]; return next; }); toast.success("キューに戻しました。"); };
   const countFor = (type: QueueItem["type"]) => visibleQueue.filter((item) => item.type === type).length;
   return <section className="automation-hub">
     <header className="automation-page-head"><div><p className="automation-kicker">AUTOMATION INBOX</p><h1>今日、確認すること。</h1><p>入力・整理・期限確認を済ませたものだけを集めました。あなたは内容を確認し、必要な判断だけを行います。</p></div><button className="automation-refresh" onClick={() => toast.success("自動処理の結果を更新しました")}><RefreshCw size={15} />更新</button></header>
     <div className="automation-summary" aria-label="自動化インボックスの状況"><button onClick={() => onNavigate("meetings")}><span className="summary-icon blue"><Sparkles size={16} /></span><div><b>{countFor("議事録")}</b><span>下書きの確認</span></div><ChevronRight size={16} /></button><button onClick={() => onNavigate("inbounds")}><span className="summary-icon amber"><Inbox size={16} /></span><div><b>{countFor("問い合わせ")}</b><span>取引先化の準備</span></div><ChevronRight size={16} /></button><button onClick={() => onNavigate("actions")}><span className="summary-icon red"><Clock3 size={16} /></span><div><b>{countFor("期限")}</b><span>今日が期限</span></div><ChevronRight size={16} /></button><button onClick={() => onNavigate("renewals")}><span className="summary-icon green"><RefreshCw size={16} /></span><div><b>{countFor("更新")}</b><span>更新の確認</span></div><ChevronRight size={16} /></button></div>
-    <div className="automation-layout"><main className="automation-queue"><div className="automation-section-head"><div><p className="automation-kicker">READY FOR YOU</p><h2>確認が必要な処理</h2></div><span>{visibleQueue.length}件</span></div><div className="queue-list">{visibleQueue.map((item, index) => <article className="automation-row" key={item.id}><span className="queue-index">{String(index + 1).padStart(2, "0")}</span><QueueStatus tone={item.tone}>{item.type}</QueueStatus><div className="queue-copy"><b>{item.company}</b><h3>{item.title}</h3><p>{item.detail}</p></div><div className="queue-time"><span>{item.time}</span><button className="queue-dismiss" onClick={() => dismiss(item.id)} aria-label={`${item.title}を見送る`}><EyeOff size={14} />見送る</button><button onClick={() => onNavigate(item.target)}>{item.state}<ArrowUpRight size={14} /></button></div></article>)}{visibleQueue.length === 0 && <p className="queue-empty">確認が必要な処理はありません。</p>}</div><button className="queue-clear" onClick={() => toast.info("完了済みの処理はアクティビティ履歴で確認できます")}><CheckCircle2 size={15} />完了した処理を見る</button></main>
+    <div className="automation-layout"><main className="automation-queue"><div className="automation-section-head"><div><p className="automation-kicker">READY FOR YOU</p><h2>確認が必要な処理</h2></div><span>{visibleQueue.length}件</span></div><div className="queue-list">{visibleQueue.map((item, index) => <article className="automation-row" key={item.id}><span className="queue-index">{String(index + 1).padStart(2, "0")}</span><QueueStatus tone={item.tone}>{item.type}</QueueStatus><div className="queue-copy"><b>{item.company}</b><h3>{item.title}</h3><p>{item.detail}</p></div><div className="queue-time"><span>{item.time}</span><button className="queue-dismiss" onClick={() => dismiss(item.id)} aria-label={`${item.title}を見送る`}><EyeOff size={14} />見送る</button><button onClick={() => onNavigate(item.target)}>{item.state}<ArrowUpRight size={14} /></button></div></article>)}{visibleQueue.length === 0 && <p className="queue-empty">確認が必要な処理はありません。</p>}</div><button className="queue-clear" onClick={() => toast.info("完了済みの処理はアクティビティ履歴で確認できます")}><CheckCircle2 size={15} />完了した処理を見る</button>{dismissedEntries.length > 0 && <div className="queue-dismissed"><p className="automation-kicker">見送った項目（{formatDate(new Date())}時点）</p>{dismissedEntries.map((item) => { const record = dismissed[item.id]; return <article className="queue-dismissed-row" key={item.id}><div className="queue-copy"><b>{item.company}</b><h3>{item.title}</h3></div><input className="dismiss-reason" value={record.reason} onChange={(e) => updateReason(item.id, e.target.value)} aria-label={`${item.title}の見送り理由`} /><span className="dismiss-meta">{record.actor}が見送り · {record.snoozeUntil}に再表示</span><button className="queue-dismiss" onClick={() => restore(item.id)} aria-label={`${item.title}をキューに戻す`}><RotateCcw size={13} />戻す</button></article>; })}</div>}</main>
       <aside className="automation-context"><section className="automation-card"><div className="automation-card-head"><span className="summary-icon blue"><ListChecks size={15} /></span><div><p className="automation-kicker">HOW IT SAVES TIME</p><h2>今日、省けた作業</h2></div></div><div className="saved-work"><div><b>3</b><span>項目</span><p>議事録から自動で整理</p></div><div><b>1</b><span>件</span><p>問い合わせを下書き作成</p></div></div><p className="automation-note">自動処理は候補を作るだけです。確定情報へ反映する前に、必ず人が確認します。</p></section><section className="automation-card rule-card"><div className="automation-card-head"><span className="summary-icon green"><CircleCheck size={15} /></span><div><p className="automation-kicker">FREE MVP RULE</p><h2>無料で進める範囲</h2></div></div><ol><li><i>1</i><span>議事録を貼り付ける</span></li><li><i>2</i><span>構造化した下書きを確認する</span></li><li><i>3</i><span>確定した行動だけを保存する</span></li></ol><button onClick={() => toast.info("自動化の設計メモを開きました")}>自動化の方針を見る <ArrowUpRight size={14} /></button></section><section className="automation-card owner-card"><div className="automation-card-head"><span className="summary-icon neutral"><UserRound size={15} /></span><div><p className="automation-kicker">YOUR FOCUS</p><h2>今日の担当</h2></div></div><b>佐々木 瑞希</b><p>最初に確認するものは、ネクサス製作所の議事録です。</p><button onClick={() => onNavigate("meetings")}>議事録を開く <ChevronRight size={14} /></button></section></aside>
     </div>
     <section className="automation-customers"><div className="automation-section-head"><div><p className="automation-kicker">CUSTOMER PULSE</p><h2>顧客の変化</h2></div><button onClick={() => onNavigate("accounts")}>顧客を開く <ArrowUpRight size={14} /></button></div><div className="customer-pulse-grid"><button onClick={() => onNavigate("accounts")}><span className="pulse-dot warning" /><div><b>ネクサス製作所</b><p>確認待ちの議事録があります</p></div><QueueStatus tone="amber">提案</QueueStatus></button><button onClick={() => onNavigate("accounts")}><span className="pulse-dot stable" /><div><b>エバーグリーン物流</b><p>更新前の確認が必要です</p></div><QueueStatus tone="green">更新</QueueStatus></button><button onClick={() => onNavigate("accounts")}><span className="pulse-dot active" /><div><b>クラウドリンク</b><p>役員会の日程を確認中です</p></div><QueueStatus tone="blue">交渉</QueueStatus></button></div></section>
