@@ -70,6 +70,13 @@ api.get(
   asyncHandler(async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const category = typeof req.query.category === "string" ? req.query.category : "";
+    // Cap at 2000 as a safety limit against an unbounded query, not as a
+    // silent page size — 665 companies already exceeded the previous
+    // hardcoded 500 and were invisible in the unfiltered list. Callers that
+    // need true pagination should use limit/offset; the total count is
+    // always returned so the frontend can tell it's not seeing everything.
+    const limit = Math.min(Number(req.query.limit) || 2000, 2000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
     const params: unknown[] = [];
     const conditions: string[] = [];
     if (q) {
@@ -81,14 +88,15 @@ api.get(
       conditions.push(`category = $${params.length}`);
     }
     const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
+    const countResult = await pool.query(`select count(*) from companies ${where}`, params);
     const result = await pool.query(
       `select id, name, category, name_variants, meeting_count, created_at
        from companies ${where}
        order by meeting_count desc, name asc
-       limit 500`,
-      params
+       limit $${params.length + 1} offset $${params.length + 2}`,
+      [...params, limit, offset]
     );
-    res.json({ companies: result.rows });
+    res.json({ companies: result.rows, total: Number(countResult.rows[0].count) });
   })
 );
 
