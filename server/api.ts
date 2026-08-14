@@ -119,7 +119,11 @@ api.get(
       "select * from contacts where company_id = $1 order by created_at asc",
       [req.params.id]
     );
-    res.json({ company: company.rows[0], meetings: meetings.rows, actions: actions.rows, deals: deals.rows, contacts: contacts.rows });
+    const proposals = await pool.query(
+      "select * from proposals where company_id = $1 order by created_at desc",
+      [req.params.id]
+    );
+    res.json({ company: company.rows[0], meetings: meetings.rows, actions: actions.rows, deals: deals.rows, contacts: contacts.rows, proposals: proposals.rows });
   })
 );
 
@@ -374,5 +378,44 @@ api.post(
       [companyId, req.params.id]
     );
     res.json({ inquiry: updated.rows[0], company_id: companyId });
+  })
+);
+
+const PROPOSAL_TYPES = ["提案書", "見積書", "契約書", "その他"];
+
+function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+api.post(
+  "/companies/:id/proposals",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { deal_id, type, title, url, version } = req.body ?? {};
+    if (!title) return res.status(400).json({ error: "資料名は必須です" });
+    if (!isHttpUrl(url)) return res.status(400).json({ error: "有効なURL（http/https）を入力してください" });
+    if (type && !PROPOSAL_TYPES.includes(type)) return res.status(400).json({ error: `typeは次のいずれかにしてください: ${PROPOSAL_TYPES.join(", ")}` });
+    const user = (req as unknown as { user: SessionUser }).user;
+    const result = await pool.query(
+      `insert into proposals (company_id, deal_id, type, title, url, version, created_by)
+       values ($1, $2, coalesce($3, '提案書'), $4, $5, coalesce($6, 1), $7) returning *`,
+      [req.params.id, deal_id || null, type || null, title, url, version || null, user?.name ?? user?.email ?? null]
+    );
+    res.json({ proposal: result.rows[0] });
+  })
+);
+
+api.delete(
+  "/proposals/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await pool.query("delete from proposals where id = $1", [req.params.id]);
+    res.json({ ok: true });
   })
 );

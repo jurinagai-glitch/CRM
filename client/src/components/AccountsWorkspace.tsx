@@ -3,7 +3,7 @@
  * Wired to real company/meeting/deal/contact data via /api/companies.
  */
 import { Button } from "@/components/ui/button";
-import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, CircleAlert, CopyPlus, FileText, MoreHorizontal, Plus, Search, Sparkles, Trash2, UserRound } from "lucide-react";
+import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, CircleAlert, CopyPlus, ExternalLink, FileText, MoreHorizontal, Plus, Search, Sparkles, Trash2, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -35,6 +35,7 @@ type MeetingNote = {
 
 type Deal = { id: string; name: string; stage: string; amount: number | null; status: string };
 type Contact = { id: string; name: string; title: string | null };
+type Proposal = { id: string; type: string; title: string; url: string; version: number };
 
 function Status({ children, tone = "neutral" }: { children: string; tone?: "neutral" | "navy" | "moss" | "ochre" | "danger" }) {
   return <span className={`enterprise-status ${tone}`}>{children}</span>;
@@ -48,17 +49,21 @@ function categoryTone(category: string): "neutral" | "navy" | "moss" | "ochre" |
 }
 
 const DEAL_STAGES = ["初回接触", "提案", "交渉", "クロージング", "成約", "失注"];
+const PROPOSAL_TYPES = ["提案書", "見積書", "契約書", "その他"];
 
 export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen: ScreenTarget) => void }) {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<{ company: Company; meetings: MeetingNote[]; deals: Deal[]; contacts: Contact[] } | null>(null);
+  const [detail, setDetail] = useState<{ company: Company; meetings: MeetingNote[]; deals: Deal[]; contacts: Contact[]; proposals: Proposal[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [newDealName, setNewDealName] = useState("");
   const [newDealStage, setNewDealStage] = useState(DEAL_STAGES[0]);
   const [newContactName, setNewContactName] = useState("");
   const [newContactTitle, setNewContactTitle] = useState("");
+  const [newProposalTitle, setNewProposalTitle] = useState("");
+  const [newProposalUrl, setNewProposalUrl] = useState("");
+  const [newProposalType, setNewProposalType] = useState(PROPOSAL_TYPES[0]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -123,6 +128,30 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
     reloadDetail();
   };
 
+  const addProposal = async () => {
+    if (!selectedId || !newProposalTitle.trim()) return toast.error("資料名を入力してください");
+    if (!/^https?:\/\//.test(newProposalUrl)) return toast.error("http(s)から始まる有効なURLを入力してください");
+    const res = await fetch(`/api/companies/${selectedId}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ title: newProposalTitle, url: newProposalUrl, type: newProposalType }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return toast.error(data.error ?? "登録に失敗しました");
+    }
+    setNewProposalTitle("");
+    setNewProposalUrl("");
+    reloadDetail();
+    toast.success("資料を登録しました");
+  };
+
+  const removeProposal = async (id: string) => {
+    await fetch(`/api/proposals/${id}`, { method: "DELETE", credentials: "include" });
+    reloadDetail();
+  };
+
   return <section className="screen-page enterprise-workspace account-workspace">
     <header className="enterprise-page-head"><div><p className="eyebrow">ACCOUNTS · CUSTOMER WORKSPACE</p><h1>取引先の判断を、<br />一つの文脈で進める。</h1><p>過去の商談記録を、取引先ごとの作業面に集約します。</p></div><div className="enterprise-head-actions"><Button className="ink-button" onClick={() => toast.success("取引先登録フォームを開きました")}><Plus size={16} />取引先を登録</Button></div></header>
 
@@ -139,6 +168,8 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
         <section className="account-facts"><div><span>区分</span><b>{detail.company.category}</b><small>&nbsp;</small></div><div><span>商談件数</span><b>{detail.company.meeting_count}件</b><small>&nbsp;</small></div><div><span>最終商談</span><b>{latestMeeting?.meeting_date ?? "―"}</b><small>{latestMeeting?.format ?? ""}</small></div><div><span>登録済み旧表記</span><b>{detail.company.name_variants.length}件</b><small>&nbsp;</small></div></section>
 
         <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">DEALS</span><h3>商談</h3></div><span>{detail.deals.length}件</span></div><div className="activity-ledger">{detail.deals.length === 0 && <p className="queue-empty">商談はまだ登録されていません。</p>}{detail.deals.map((d) => <article key={d.id}><div><b>{d.name}</b><p>{d.amount ? `¥${Number(d.amount).toLocaleString()}` : "金額未設定"}</p></div><Status tone={d.stage === "成約" ? "moss" : d.stage === "失注" ? "danger" : "navy"}>{d.stage}</Status></article>)}<div style={{ display: "flex", gap: 6, padding: "10px 0" }}><input placeholder="商談名" value={newDealName} onChange={(e) => setNewDealName(e.target.value)} style={{ flex: 1, border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }} /><select value={newDealStage} onChange={(e) => setNewDealStage(e.target.value)} style={{ border: "1px solid #dedbd2", borderRadius: 6, fontSize: 12 }}>{DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select><button className="context-link" onClick={addDeal}>追加</button></div></div></section>
+
+        <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">PROPOSALS</span><h3>提案書・資料（リンク）</h3></div><span>{detail.proposals.length}件</span></div><div className="activity-ledger">{detail.proposals.length === 0 && <p className="queue-empty">資料はまだ登録されていません。</p>}{detail.proposals.map((p) => <article key={p.id}><div><b>{p.title}</b><p><a href={p.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#16324f" }}>リンクを開く <ExternalLink size={12} /></a></p></div><Status tone="neutral">{p.type}</Status><button onClick={() => removeProposal(p.id)} aria-label="削除" style={{ marginLeft: 8 }}><Trash2 size={13} /></button></article>)}<div style={{ display: "flex", gap: 6, padding: "10px 0" }}><input placeholder="資料名" value={newProposalTitle} onChange={(e) => setNewProposalTitle(e.target.value)} style={{ flex: 1, border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }} /><input placeholder="URL（Googleドライブ等）" value={newProposalUrl} onChange={(e) => setNewProposalUrl(e.target.value)} style={{ flex: 2, border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }} /><select value={newProposalType} onChange={(e) => setNewProposalType(e.target.value)} style={{ border: "1px solid #dedbd2", borderRadius: 6, fontSize: 12 }}>{PROPOSAL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select><button className="context-link" onClick={addProposal}>追加</button></div></div></section>
 
         <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">MEETING HISTORY</span><h3>過去の商談履歴</h3></div><span>{detail.meetings.length}件</span></div><div className="activity-ledger">{detail.meetings.length === 0 && <p className="queue-empty">商談記録がありません。</p>}{detail.meetings.slice(0, 10).map((m, i) => <article key={m.id}><span className="activity-index">{String(i + 1).padStart(2, "0")}</span><div><b>{m.contact ? `${m.contact}` : "商談"}{m.format ? `（${m.format}）` : ""}</b><p>{m.content ? m.content.slice(0, 160) : "内容の記録はありません。"}</p><small>{m.meeting_date ?? "日付不明"}</small></div><Status tone={m.summary_status === "approved" ? "moss" : "neutral"}>{m.summary_status === "approved" ? "確定済み" : "商談"}</Status></article>)}</div></section>
       </main>
