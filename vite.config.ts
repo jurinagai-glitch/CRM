@@ -203,7 +203,17 @@ function vitePluginStorageProxy(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginStorageProxy()];
+function vitePluginApiServer(): Plugin {
+  return {
+    name: "relay-crm-api-server",
+    async configureServer(server: ViteDevServer) {
+      const { createApiApp } = await import("./server/apiApp");
+      server.middlewares.use("/api", createApiApp());
+    },
+  };
+}
+
+const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginStorageProxy(), vitePluginApiServer()];
 
 export default defineConfig({
   plugins,
