@@ -488,3 +488,156 @@ api.delete(
     res.json({ ok: true });
   })
 );
+
+api.get(
+  "/knowledge-items",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const tag = typeof req.query.tag === "string" ? req.query.tag.trim() : "";
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+    if (q) {
+      params.push(`%${q}%`);
+      conditions.push(`(title ilike $${params.length} or body ilike $${params.length})`);
+    }
+    if (tag) {
+      params.push(tag);
+      conditions.push(`$${params.length} = any(tags)`);
+    }
+    const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
+    const result = await pool.query(
+      `select k.*, c.name as source_company_name
+       from knowledge_items k
+       left join companies c on c.id = k.source_company_id
+       ${where}
+       order by k.created_at desc`,
+      params
+    );
+    res.json({ items: result.rows });
+  })
+);
+
+api.post(
+  "/knowledge-items",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { title, body, tags, source_company_id, source_meeting_note_id } = req.body ?? {};
+    if (!title) return res.status(400).json({ error: "タイトルは必須です" });
+    const user = (req as unknown as { user: SessionUser }).user;
+    const result = await pool.query(
+      `insert into knowledge_items (title, body, tags, source_company_id, source_meeting_note_id, created_by)
+       values ($1, $2, $3, $4, $5, $6) returning *`,
+      [title, body || null, Array.isArray(tags) ? tags : [], source_company_id || null, source_meeting_note_id || null, user?.name ?? user?.email ?? null]
+    );
+    res.json({ item: result.rows[0] });
+  })
+);
+
+// 打ち合わせ準備ブリーフィング: 既存の議事録・商談・提案書・ナレッジから、その場で組み立てる（新規テーブルは持たない）
+api.get(
+  "/companies/:id/briefing",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const company = await pool.query("select * from companies where id = $1", [req.params.id]);
+    if (!company.rows[0]) return res.status(404).json({ error: "取引先が見つかりません" });
+
+    const recentSummaries = await pool.query(
+      `select s.*, m.meeting_date
+       from meeting_summaries s
+       join meeting_notes m on m.id = s.meeting_note_id
+       where m.company_id = $1 and s.status = 'approved'
+       order by m.meeting_date desc nulls last, m.created_at desc
+       limit 2`,
+      [req.params.id]
+    );
+    const [latest, previous] = recentSummaries.rows;
+
+    const changes: string[] = [];
+    if (latest && previous) {
+      const fields: { key: keyof typeof latest; label: string }[] = [
+        { key: "issue", label: "課題" },
+        { key: "budget", label: "予算" },
+        { key: "decision_maker", label: "決裁" },
+        { key: "timeline", label: "時期" },
+      ];
+      for (const f of fields) {
+        if ((latest[f.key] ?? null) !== (previous[f.key] ?? null) && latest[f.key]) {
+          changes.push(`${f.label}: ${previous[f.key] ?? "未確認"} → ${latest[f.key]}`);
+        }
+      }
+    }
+
+    const openActions = await pool.query(
+      "select description from next_actions where company_id = $1 and status = 'open' order by due_date asc nulls last limit 5",
+      [req.params.id]
+    );
+    const toConfirm = [
+      ...(latest?.unresolved ? [latest.unresolved] : []),
+      ...openActions.rows.map((r) => r.description),
+    ];
+
+    const openDeal = await pool.query(
+      "select * from deals where company_id = $1 and status = '進行中' order by created_at desc limit 1",
+      [req.params.id]
+    );
+
+    const meetingCount = await pool.query("select count(*) from meeting_notes where company_id = $1", [req.params.id]);
+    const proposalCount = await pool.query("select count(*) from proposals where company_id = $1", [req.params.id]);
+    const knowledge = await pool.query(
+      `select * from knowledge_items where source_company_id = $1 or source_company_id is null order by created_at desc limit 3`,
+      [req.params.id]
+    );
+
+    res.json({
+      company: company.rows[0],
+      deal: openDeal.rows[0] ?? null,
+      latest_summary: latest ?? null,
+      to_confirm: toConfirm,
+      changes_since_last: changes,
+      knowledge: knowledge.rows,
+      reference_counts: {
+        meetings: Number(meetingCount.rows[0].count),
+        proposals: Number(proposalCount.rows[0].count),
+        knowledge: knowledge.rows.length,
+      },
+    });
+  })
+);
+
+api.get(
+  "/reports/summary",
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    const dealsByStage = await pool.query(
+      `select stage, count(*)::int as count, coalesce(sum(amount), 0) as amount_sum
+       from deals where status = '進行中' group by stage`
+    );
+    const meetingsByMonth = await pool.query(
+      `select to_char(coalesce(meeting_date, created_at), 'YYYY-MM') as month, count(*)::int as count
+       from meeting_notes
+       where coalesce(meeting_date, created_at) >= now() - interval '12 months'
+       group by month order by month`
+    );
+    const companiesByCategory = await pool.query(
+      `select category, count(*)::int as count from companies group by category order by count desc`
+    );
+    const inboundByStatus = await pool.query(
+      `select status, count(*)::int as count from inbound_inquiries group by status`
+    );
+    const actionCounts = await pool.query(
+      `select
+         count(*) filter (where status = 'open')::int as open_count,
+         count(*) filter (where status = 'open' and due_date < current_date)::int as overdue_count
+       from next_actions`
+    );
+
+    res.json({
+      deals_by_stage: dealsByStage.rows,
+      meetings_by_month: meetingsByMonth.rows,
+      companies_by_category: companiesByCategory.rows,
+      inbound_by_status: inboundByStatus.rows,
+      actions: actionCounts.rows[0],
+    });
+  })
+);
