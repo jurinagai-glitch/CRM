@@ -222,42 +222,73 @@ api.post(
 );
 
 // 人が確認・編集した内容を確定データとして反映する（下書き→承認、次アクション作成、商談件数の更新）
+// トランザクション化・冪等化: 二重送信されても next_actions が重複作成されたり
+// meeting_count が二重加算されたりしないよう、承認済みの場合は既存の結果をそのまま返す。
 api.post(
   "/meeting-summaries/:id/approve",
   requireAuth,
   asyncHandler(async (req, res) => {
     const { summary, decisions, issue, budget, decision_maker, timeline, actions } = req.body ?? {};
+    const user = (req as unknown as { user: SessionUser }).user;
 
-    const summaryRow = await pool.query("select * from meeting_summaries where id = $1", [req.params.id]);
-    if (!summaryRow.rows[0]) return res.status(404).json({ error: "下書きが見つかりません" });
-    const note = await pool.query("select company_id from meeting_notes where id = $1", [summaryRow.rows[0].meeting_note_id]);
-    const companyId = note.rows[0]?.company_id;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const updated = await pool.query(
-      `update meeting_summaries set
-         summary = $1, decisions = $2, issue = $3, budget = $4, decision_maker = $5, timeline = $6,
-         status = 'approved', edited = true, approved_at = now()
-       where id = $7 returning *`,
-      [summary, JSON.stringify(decisions ?? []), issue, budget, decision_maker, timeline, req.params.id]
-    );
+      const summaryRow = await client.query("select * from meeting_summaries where id = $1 for update", [req.params.id]);
+      if (!summaryRow.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "下書きが見つかりません" });
+      }
 
-    const createdActions = [];
-    for (const a of actions ?? []) {
-      if (!a.description) continue;
-      if (a.priority && !ACTION_PRIORITIES.includes(a.priority)) continue;
-      const inserted = await pool.query(
-        `insert into next_actions (company_id, meeting_note_id, description, assignee, due_date, priority)
-         values ($1, $2, $3, $4, $5, $6) returning *`,
-        [companyId, summaryRow.rows[0].meeting_note_id, a.description, a.assignee || null, a.due_date || null, a.priority || "中"]
+      if (summaryRow.rows[0].status === "approved") {
+        const existingActions = await client.query(
+          "select * from next_actions where source_summary_id = $1 order by source_action_index",
+          [req.params.id]
+        );
+        await client.query("ROLLBACK");
+        return res.json({ summary: summaryRow.rows[0], actions: existingActions.rows, already_approved: true });
+      }
+
+      const note = await client.query("select company_id from meeting_notes where id = $1", [summaryRow.rows[0].meeting_note_id]);
+      const companyId = note.rows[0]?.company_id;
+
+      const updated = await client.query(
+        `update meeting_summaries set
+           summary = $1, decisions = $2, issue = $3, budget = $4, decision_maker = $5, timeline = $6,
+           status = 'approved', edited = true, approved_at = now(), approved_by = $7
+         where id = $8 and status = 'draft' returning *`,
+        [summary, JSON.stringify(decisions ?? []), issue, budget, decision_maker, timeline, user?.id ?? null, req.params.id]
       );
-      createdActions.push(inserted.rows[0]);
-    }
 
-    if (companyId) {
-      await pool.query("update companies set meeting_count = meeting_count + 1 where id = $1", [companyId]);
-    }
+      const createdActions = [];
+      let index = 0;
+      for (const a of actions ?? []) {
+        if (a.description && (!a.priority || ACTION_PRIORITIES.includes(a.priority))) {
+          const inserted = await client.query(
+            `insert into next_actions (company_id, meeting_note_id, description, assignee, due_date, priority, source_summary_id, source_action_index)
+             values ($1, $2, $3, $4, $5, $6, $7, $8)
+             on conflict (source_summary_id, source_action_index) where source_summary_id is not null do nothing
+             returning *`,
+            [companyId, summaryRow.rows[0].meeting_note_id, a.description, a.assignee || null, a.due_date || null, a.priority || "中", req.params.id, index]
+          );
+          if (inserted.rows[0]) createdActions.push(inserted.rows[0]);
+        }
+        index += 1;
+      }
 
-    res.json({ summary: updated.rows[0], actions: createdActions });
+      if (companyId) {
+        await client.query("update companies set meeting_count = meeting_count + 1 where id = $1", [companyId]);
+      }
+
+      await client.query("COMMIT");
+      res.json({ summary: updated.rows[0], actions: createdActions });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   })
 );
 
@@ -281,16 +312,23 @@ api.patch(
   "/next-actions/:id",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { status, dismiss_reason, dismissed_by, dismiss_snooze_until } = req.body ?? {};
+    const { status, dismiss_reason, dismiss_snooze_until } = req.body ?? {};
     if (status && !ACTION_STATUSES.includes(status)) return res.status(400).json({ error: `statusは次のいずれかにしてください: ${ACTION_STATUSES.join(", ")}` });
+    const user = (req as unknown as { user: SessionUser }).user;
+    // dismissed_by is derived from the authenticated session, never trusted from the client,
+    // and only set when this request is the one performing the dismissal.
+    const isDismissing = status === "dismissed";
+    const dismissedByName = isDismissing ? (user?.name ?? user?.email ?? null) : null;
+    const dismissedByUserId = isDismissing ? (user?.id ?? null) : null;
     const result = await pool.query(
       `update next_actions set
          status = coalesce($1, status),
          dismiss_reason = coalesce($2, dismiss_reason),
          dismissed_by = coalesce($3, dismissed_by),
-         dismiss_snooze_until = coalesce($4, dismiss_snooze_until)
-       where id = $5 returning *`,
-      [status ?? null, dismiss_reason ?? null, dismissed_by ?? null, dismiss_snooze_until ?? null, req.params.id]
+         dismissed_by_user_id = coalesce($4, dismissed_by_user_id),
+         dismiss_snooze_until = coalesce($5, dismiss_snooze_until)
+       where id = $6 returning *`,
+      [status ?? null, dismiss_reason ?? null, dismissedByName, dismissedByUserId, dismiss_snooze_until ?? null, req.params.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: "次アクションが見つかりません" });
     res.json({ action: result.rows[0] });
@@ -366,26 +404,49 @@ api.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { existing_company_id } = req.body ?? {};
-    const inquiry = await pool.query("select * from inbound_inquiries where id = $1", [req.params.id]);
-    if (!inquiry.rows[0]) return res.status(404).json({ error: "問い合わせが見つかりません" });
-    if (inquiry.rows[0].status === "取引先化済み") return res.status(400).json({ error: "すでに取引先化されています" });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    let companyId = existing_company_id;
-    if (!companyId) {
-      const created = await pool.query(
-        `insert into companies (name, category, meeting_count) values ($1, '新規開拓', 0) returning id`,
-        [inquiry.rows[0].company_name]
+      const inquiry = await client.query("select * from inbound_inquiries where id = $1 for update", [req.params.id]);
+      if (!inquiry.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "問い合わせが見つかりません" });
+      }
+      if (inquiry.rows[0].status === "取引先化済み") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "すでに取引先化されています" });
+      }
+
+      let companyId = existing_company_id;
+      if (!companyId) {
+        const created = await client.query(
+          `insert into companies (name, category, meeting_count) values ($1, '新規開拓', 0) returning id`,
+          [inquiry.rows[0].company_name]
+        );
+        companyId = created.rows[0].id;
+      }
+      if (inquiry.rows[0].contact_name) {
+        await client.query(`insert into contacts (company_id, name) values ($1, $2)`, [companyId, inquiry.rows[0].contact_name]);
+      }
+      // UI copy for this action reads "取引先と商談を作成" — create the initial deal here too.
+      const deal = await client.query(
+        `insert into deals (company_id, name, stage) values ($1, $2, '初回接触') returning *`,
+        [companyId, `${inquiry.rows[0].company_name}・初回ヒアリング`]
       );
-      companyId = created.rows[0].id;
+      const updated = await client.query(
+        `update inbound_inquiries set status = '取引先化済み', converted_company_id = $1, converted_deal_id = $2 where id = $3 returning *`,
+        [companyId, deal.rows[0].id, req.params.id]
+      );
+
+      await client.query("COMMIT");
+      res.json({ inquiry: updated.rows[0], company_id: companyId, deal_id: deal.rows[0].id });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
-    if (inquiry.rows[0].contact_name) {
-      await pool.query(`insert into contacts (company_id, name) values ($1, $2)`, [companyId, inquiry.rows[0].contact_name]);
-    }
-    const updated = await pool.query(
-      `update inbound_inquiries set status = '取引先化済み', converted_company_id = $1 where id = $2 returning *`,
-      [companyId, req.params.id]
-    );
-    res.json({ inquiry: updated.rows[0], company_id: companyId });
   })
 );
 

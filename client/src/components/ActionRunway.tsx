@@ -23,7 +23,6 @@ type ActionItem = {
   dismiss_snooze_until: string | null;
 };
 
-const CURRENT_ACTOR = "佐々木 瑞希";
 const DEFAULT_SNOOZE_DAYS = 7;
 const DEFAULT_DISMISS_REASON = "現在は対応不要のため見送り";
 
@@ -63,7 +62,7 @@ export default function ActionRunway({ onNavigate }: { onNavigate: (screen: Scre
   const complete = async (id: string) => { if (await patch(id, { status: "done" })) toast.success("アクションを完了にしました。"); };
   const dismiss = async (id: string) => {
     const snoozeUntil = new Date(Date.now() + DEFAULT_SNOOZE_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    if (await patch(id, { status: "dismissed", dismiss_reason: DEFAULT_DISMISS_REASON, dismissed_by: CURRENT_ACTOR, dismiss_snooze_until: snoozeUntil })) {
+    if (await patch(id, { status: "dismissed", dismiss_reason: DEFAULT_DISMISS_REASON, dismiss_snooze_until: snoozeUntil })) {
       toast.info(`見送りにしました。${snoozeUntil}に再表示されます。`);
     }
   };
