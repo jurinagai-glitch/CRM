@@ -284,3 +284,95 @@ api.patch(
     res.json({ action: result.rows[0] });
   })
 );
+
+const INBOUND_STATUSES = ["未対応", "対応中", "取引先化済み", "対象外"];
+
+api.get(
+  "/inbound-inquiries",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const status = typeof req.query.status === "string" && INBOUND_STATUSES.includes(req.query.status) ? req.query.status : null;
+    const result = await pool.query(
+      status
+        ? "select * from inbound_inquiries where status = $1 order by created_at desc"
+        : "select * from inbound_inquiries where status != '対象外' order by created_at desc",
+      status ? [status] : []
+    );
+    res.json({ inquiries: result.rows });
+  })
+);
+
+api.post(
+  "/inbound-inquiries",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { source, company_name, contact_name, content } = req.body ?? {};
+    if (!company_name) return res.status(400).json({ error: "会社名は必須です" });
+    const result = await pool.query(
+      `insert into inbound_inquiries (source, company_name, contact_name, content)
+       values ($1, $2, $3, $4) returning *`,
+      [source || null, company_name, contact_name || null, content || null]
+    );
+    res.json({ inquiry: result.rows[0] });
+  })
+);
+
+api.patch(
+  "/inbound-inquiries/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { status, exclusion_reason } = req.body ?? {};
+    if (status && !INBOUND_STATUSES.includes(status)) return res.status(400).json({ error: `statusは次のいずれかにしてください: ${INBOUND_STATUSES.join(", ")}` });
+    const result = await pool.query(
+      `update inbound_inquiries set status = coalesce($1, status), exclusion_reason = coalesce($2, exclusion_reason)
+       where id = $3 returning *`,
+      [status ?? null, exclusion_reason ?? null, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "問い合わせが見つかりません" });
+    res.json({ inquiry: result.rows[0] });
+  })
+);
+
+// 取引先化: 問い合わせから新しい会社を作成し、問い合わせ側を「取引先化済み」にする。
+// 既存の会社名と重複していないか、事前にゆるくチェックして候補を返す（自動統合はしない）。
+api.get(
+  "/inbound-inquiries/:id/duplicate-check",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const inquiry = await pool.query("select * from inbound_inquiries where id = $1", [req.params.id]);
+    if (!inquiry.rows[0]) return res.status(404).json({ error: "問い合わせが見つかりません" });
+    const candidates = await pool.query(
+      "select id, name, category from companies where name ilike $1 limit 10",
+      [`%${inquiry.rows[0].company_name}%`]
+    );
+    res.json({ candidates: candidates.rows });
+  })
+);
+
+api.post(
+  "/inbound-inquiries/:id/convert",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { existing_company_id } = req.body ?? {};
+    const inquiry = await pool.query("select * from inbound_inquiries where id = $1", [req.params.id]);
+    if (!inquiry.rows[0]) return res.status(404).json({ error: "問い合わせが見つかりません" });
+    if (inquiry.rows[0].status === "取引先化済み") return res.status(400).json({ error: "すでに取引先化されています" });
+
+    let companyId = existing_company_id;
+    if (!companyId) {
+      const created = await pool.query(
+        `insert into companies (name, category, meeting_count) values ($1, '新規開拓', 0) returning id`,
+        [inquiry.rows[0].company_name]
+      );
+      companyId = created.rows[0].id;
+    }
+    if (inquiry.rows[0].contact_name) {
+      await pool.query(`insert into contacts (company_id, name) values ($1, $2)`, [companyId, inquiry.rows[0].contact_name]);
+    }
+    const updated = await pool.query(
+      `update inbound_inquiries set status = '取引先化済み', converted_company_id = $1 where id = $2 returning *`,
+      [companyId, req.params.id]
+    );
+    res.json({ inquiry: updated.rows[0], company_id: companyId });
+  })
+);
