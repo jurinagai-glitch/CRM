@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, Copy, EyeOff, Inbox, Plus, RotateCcw, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { apiRequest } from "@/lib/api";
 
 type ScreenTarget = "overview" | "inbounds" | "accounts" | "meetings" | "briefing" | "knowledge" | "actions" | "renewals";
 
@@ -58,12 +59,12 @@ export default function InboundTriage({ onNavigate }: { onNavigate: (screen: Scr
 
   const createInquiry = async () => {
     if (!newInquiry.company_name.trim()) return toast.error("会社名を入力してください");
-    await fetch("/api/inbound-inquiries", {
+    const result = await apiRequest("/api/inbound-inquiries", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify(newInquiry),
     });
+    if (!result) return;
     setNewInquiry({ company_name: "", contact_name: "", source: "", content: "" });
     setShowNewForm(false);
     load();
@@ -72,37 +73,36 @@ export default function InboundTriage({ onNavigate }: { onNavigate: (screen: Scr
 
   const dismiss = async () => {
     if (!inquiry) return;
-    await fetch(`/api/inbound-inquiries/${inquiry.id}`, {
+    const result = await apiRequest(`/api/inbound-inquiries/${inquiry.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ status: "対象外", exclusion_reason: "対象外（要件が合わない）" }),
     });
+    if (!result) return;
     setSelectedId(null);
     load();
     toast.info("対象外にしました。");
   };
 
   const restore = async (id: string) => {
-    await fetch(`/api/inbound-inquiries/${id}`, {
+    const result = await apiRequest(`/api/inbound-inquiries/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ status: "未対応" }),
     });
+    if (!result) return;
     load();
     toast.success("問い合わせ一覧に戻しました。");
   };
 
   const convert = async (existingCompanyId?: string) => {
     if (!inquiry) return;
-    const res = await fetch(`/api/inbound-inquiries/${inquiry.id}/convert`, {
+    const result = await apiRequest(`/api/inbound-inquiries/${inquiry.id}/convert`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ existing_company_id: existingCompanyId }),
     });
-    if (!res.ok) return toast.error("取引先化に失敗しました");
+    if (!result) return;
     toast.success("取引先を作成しました。問い合わせ原文も引き継がれています。");
     setSelectedId(null);
     load();

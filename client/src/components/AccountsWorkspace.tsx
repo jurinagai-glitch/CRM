@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, CircleAlert, CopyPlus, ExternalLink, FileText, MoreHorizontal, Plus, Search, Sparkles, Trash2, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { apiRequest } from "@/lib/api";
 
 type ScreenTarget = "overview" | "inbounds" | "accounts" | "meetings" | "briefing" | "knowledge" | "actions" | "renewals";
 
@@ -98,12 +99,12 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
 
   const addDeal = async () => {
     if (!selectedId || !newDealName.trim()) return toast.error("商談名を入力してください");
-    await fetch(`/api/companies/${selectedId}/deals`, {
+    const result = await apiRequest(`/api/companies/${selectedId}/deals`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ name: newDealName, stage: newDealStage }),
     });
+    if (!result) return;
     setNewDealName("");
     reloadDetail();
     toast.success("商談を登録しました");
@@ -111,12 +112,12 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
 
   const addContact = async () => {
     if (!selectedId || !newContactName.trim()) return toast.error("担当者名を入力してください");
-    await fetch(`/api/companies/${selectedId}/contacts`, {
+    const result = await apiRequest(`/api/companies/${selectedId}/contacts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ name: newContactName, title: newContactTitle || null }),
     });
+    if (!result) return;
     setNewContactName("");
     setNewContactTitle("");
     reloadDetail();
@@ -124,23 +125,20 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
   };
 
   const removeContact = async (id: string) => {
-    await fetch(`/api/contacts/${id}`, { method: "DELETE", credentials: "include" });
+    const result = await apiRequest(`/api/contacts/${id}`, { method: "DELETE" });
+    if (!result) return;
     reloadDetail();
   };
 
   const addProposal = async () => {
     if (!selectedId || !newProposalTitle.trim()) return toast.error("資料名を入力してください");
     if (!/^https?:\/\//.test(newProposalUrl)) return toast.error("http(s)から始まる有効なURLを入力してください");
-    const res = await fetch(`/api/companies/${selectedId}/proposals`, {
+    const result = await apiRequest(`/api/companies/${selectedId}/proposals`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ title: newProposalTitle, url: newProposalUrl, type: newProposalType }),
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      return toast.error(data.error ?? "登録に失敗しました");
-    }
+    if (!result) return;
     setNewProposalTitle("");
     setNewProposalUrl("");
     reloadDetail();
@@ -148,7 +146,8 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
   };
 
   const removeProposal = async (id: string) => {
-    await fetch(`/api/proposals/${id}`, { method: "DELETE", credentials: "include" });
+    const result = await apiRequest(`/api/proposals/${id}`, { method: "DELETE" });
+    if (!result) return;
     reloadDetail();
   };
 
