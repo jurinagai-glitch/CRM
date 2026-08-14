@@ -39,20 +39,6 @@ const navItems: { id: Screen; label: string; icon: typeof LayoutDashboard; count
   { id: "actions", label: "実行", icon: ListTodo, count: 5 },
 ];
 
-const actionItems = [
-  { company: "ネクサス製作所", action: "デモ環境の利用条件を送付", due: "今日 15:00", owner: "自分", tone: "urgent" },
-  { company: "エバーグリーン物流", action: "要件整理シートを確認", due: "明日", owner: "自分", tone: "normal" },
-  { company: "クラウドリンク", action: "役員会の日程を確認", due: "8/16", owner: "佐藤", tone: "muted" },
-  { company: "西東京リハビリテーション", action: "導入スケジュールを更新", due: "8/18", owner: "自分", tone: "muted" },
-];
-
-const deals = [
-  { name: "ネクサス製作所", deal: "現場DX 基盤導入", amount: "¥480k", owner: "高", due: "8/22", stage: "提案", color: "ochre" },
-  { name: "エバーグリーン物流", deal: "配車業務の標準化", amount: "¥350k", owner: "瑞", due: "9/05", stage: "交渉", color: "moss" },
-  { name: "クラウドリンク", deal: "営業生産性の改善", amount: "¥680k", owner: "佐", due: "9/12", stage: "提案", color: "navy" },
-  { name: "アトリエ東雲", deal: "顧客管理の再設計", amount: "¥220k", owner: "瑞", due: "9/20", stage: "初回", color: "stone" },
-];
-
 const knowledgeItems = [
   { title: "物流業界：配車チームへの初回ヒアリング", tags: ["物流", "初回商談", "課題探索"], source: "エバーグリーン物流・7/28" },
   { title: "価格への懸念を、運用コストの話へ切り替える", tags: ["価格", "切り返し", "提案"], source: "ネクサス製作所・7/16" },
@@ -65,92 +51,6 @@ function MiniAvatar({ children, tone = "navy" }: { children: string; tone?: "nav
 
 function StatusPill({ children, tone = "neutral" }: { children: string; tone?: "neutral" | "navy" | "moss" | "ochre" | "danger" }) {
   return <span className={`status-pill ${tone}`}>{children}</span>;
-}
-
-function SectionHeader({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: React.ReactNode }) {
-  return (
-    <div className="section-header">
-      <div>
-        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-        <h2>{title}</h2>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function Overview({ setScreen }: { setScreen: (screen: Screen) => void }) {
-  return (
-    <>
-      <section className="signal-banner">
-        <img src="/manus-storage/relay-dashboard-signal_032f06a5.jpg" alt="紙とインクの抽象的な背景" />
-        <div className="signal-copy">
-          <p className="eyebrow">8月13日 水曜日</p>
-          <h1>今日の判断を、<br />次の一手へ。</h1>
-          <p>期限が近い商談と、確認が必要なAI下書きから整理しています。</p>
-          <Button className="ink-button" onClick={() => setScreen("meetings")}><Plus size={16} />議事録を整理する</Button>
-        </div>
-        <div className="signal-stats" aria-label="本日の優先指標">
-          <div><span>対応期限</span><strong>4</strong><small>件・今日まで</small></div>
-          <div><span>確認待ち</span><strong>2</strong><small>AI下書き</small></div>
-        </div>
-      </section>
-
-      <section className="metrics-strip" aria-label="営業状況の要約">
-        <button onClick={() => setScreen("inbounds")}><span>未対応インバウンド</span><strong>7</strong><em>＋2件 <ArrowUpRight size={13} /></em></button>
-        <button onClick={() => setScreen("actions")}><span>今週の次アクション</span><strong>12</strong><em className="steady">期限内 8件</em></button>
-        <button onClick={() => setScreen("accounts")}><span>進行中の見込み</span><strong>¥4.2M</strong><em className="steady">9商談</em></button>
-        <button onClick={() => setScreen("meetings")}><span>今月の成約見込み</span><strong>¥1.16M</strong><em className="moss-text">3商談</em></button>
-      </section>
-
-      <div className="dashboard-columns">
-        <section className="paper-panel action-panel">
-          <SectionHeader eyebrow="TODAY'S FOCUS" title="今日、止めない商談" action={<button className="text-action" onClick={() => setScreen("actions")}>すべて見る <ChevronRight size={15} /></button>} />
-          <div className="action-list">
-            {actionItems.map((item, index) => (
-              <button className="action-row" key={item.company} onClick={() => toast.success("アクション詳細を開きました", { description: `${item.company} — ${item.action}` })}>
-                <span className={`action-index ${item.tone}`}>{String(index + 1).padStart(2, "0")}</span>
-                <span className="action-body"><b>{item.company}</b><span>{item.action}</span></span>
-                <span className="action-due"><b className={item.tone}>{item.due}</b><small>{item.owner}</small></span>
-                <ChevronRight className="row-chevron" size={17} />
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <aside className="draft-panel">
-          <div className="draft-topline"><span><Sparkles size={15} />AIが整理した下書き</span><button onClick={() => setScreen("meetings")}>2件</button></div>
-          <div className="draft-card">
-            <div className="draft-card-head"><MiniAvatar tone="ochre">N</MiniAvatar><div><b>ネクサス製作所</b><span>8/12 議事録より</span></div></div>
-            <p>「現場ごとの入力負荷」と「導入後の定着」が主要な検討ポイントとして整理されました。</p>
-            <div className="draft-chips"><StatusPill tone="ochre">課題</StatusPill><StatusPill tone="navy">次アクション 2件</StatusPill></div>
-            <button className="draft-link" onClick={() => setScreen("meetings")}>内容を確認する <ArrowUpRight size={15} /></button>
-          </div>
-          <p className="draft-caption">AIの抽出内容は、保存前に必ず確認できます。</p>
-        </aside>
-      </div>
-
-      <section className="pipeline-section">
-        <SectionHeader eyebrow="PIPELINE" title="進行中の商談" action={<button className="text-action" onClick={() => setScreen("accounts")}>商談一覧 <ChevronRight size={15} /></button>} />
-        <div className="pipeline-grid">
-          <div className="pipeline-label"><span>初回接触</span><b>2</b><i /></div>
-          <div className="pipeline-label active"><span>提案</span><b>4</b><i /></div>
-          <div className="pipeline-label"><span>交渉</span><b>2</b><i /></div>
-          <div className="pipeline-label"><span>クロージング</span><b>1</b><i /></div>
-        </div>
-        <div className="deal-list">
-          {deals.map((deal) => <button key={deal.name} className="deal-row" onClick={() => setScreen("accounts")}>
-            <span className={`deal-marker ${deal.color}`} />
-            <span className="deal-company"><b>{deal.name}</b><small>{deal.deal}</small></span>
-            <span className="deal-amount">{deal.amount}</span>
-            <StatusPill tone={deal.color === "moss" ? "moss" : deal.color === "ochre" ? "ochre" : "navy"}>{deal.stage}</StatusPill>
-            <MiniAvatar tone={deal.color === "ochre" ? "ochre" : "navy"}>{deal.owner}</MiniAvatar>
-            <span className="deal-date">{deal.due}</span>
-          </button>)}
-        </div>
-      </section>
-    </>
-  );
 }
 
 function Briefing() {
