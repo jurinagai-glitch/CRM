@@ -605,6 +605,59 @@ api.get(
   })
 );
 
+// 同じ区分（既存代理店/新規開拓など）の過去の承認済み議事録から、課題・予算感・決裁者・時期の
+// 頻出パターンを集計する。LLMは使わず、既存データの単純な頻度集計のみで組み立てる。
+function topValues(rows: Record<string, unknown>[], key: string, limit = 3) {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const value = typeof row[key] === "string" ? row[key].trim() : "";
+    if (!value) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([value, count]) => ({ value, count }));
+}
+
+api.get(
+  "/companies/:id/similar-approach",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const company = await pool.query("select * from companies where id = $1", [req.params.id]);
+    if (!company.rows[0]) return res.status(404).json({ error: "取引先が見つかりません" });
+    const category = company.rows[0].category;
+
+    const summaries = await pool.query(
+      `select s.issue, s.budget, s.decision_maker, s.timeline
+       from meeting_summaries s
+       join meeting_notes m on m.id = s.meeting_note_id
+       join companies c on c.id = m.company_id
+       where c.category = $1 and c.id != $2 and s.status = 'approved'`,
+      [category, req.params.id]
+    );
+
+    const dealOutcomes = await pool.query(
+      `select d.stage, d.status, count(*)::int as count
+       from deals d join companies c on c.id = d.company_id
+       where c.category = $1
+       group by d.stage, d.status
+       order by count desc`,
+      [category]
+    );
+
+    res.json({
+      category,
+      sample_size: summaries.rows.length,
+      common_issues: topValues(summaries.rows, "issue"),
+      common_budgets: topValues(summaries.rows, "budget"),
+      common_decision_makers: topValues(summaries.rows, "decision_maker"),
+      common_timelines: topValues(summaries.rows, "timeline"),
+      deal_outcomes: dealOutcomes.rows,
+    });
+  })
+);
+
 api.get(
   "/reports/summary",
   requireAuth,
