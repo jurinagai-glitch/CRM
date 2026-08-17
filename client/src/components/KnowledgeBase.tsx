@@ -36,10 +36,7 @@ export default function KnowledgeBase() {
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
     if (activeTag) params.set("tag", activeTag);
-    fetch(`/api/knowledge-items?${params.toString()}`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setItems(data.items ?? []))
-      .catch(() => toast.error("ナレッジの取得に失敗しました"));
+    apiRequest<{ items: KnowledgeItem[] }>(`/api/knowledge-items?${params.toString()}`).then((data) => setItems(data?.items ?? []));
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -71,7 +68,7 @@ export default function KnowledgeBase() {
       <div className="conversion-grid">
         <label>タイトル<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
         <label>タグ（読点区切り）<input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="価格、切り返し" /></label>
-        <label>内容<input value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label>
+        <label style={{ gridColumn: "1 / -1" }}>内容<textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} rows={5} placeholder="商談の背景、具体的な使いどころ、次の担当者が読んで分かるように書いてください" /></label>
       </div>
       <div className="conversion-footer"><span /><Button className="ink-button" onClick={createItem}>登録する</Button></div>
     </section>}
@@ -96,8 +93,14 @@ export default function KnowledgeBase() {
         {items.length === 0 && <p className="queue-empty">該当するナレッジはまだありません。</p>}
       </div>
       <aside className="knowledge-aside">
-        <img src="/manus-storage/relay-knowledge-stack_7b1a6485.jpg" alt="ナレッジの蓄積を表すフォルダとカード" />
-        <div><span className="eyebrow">ONBOARDING</span><h3>まず読む、<br />営業の基本線。</h3><p>新しいメンバー向けに、商談フェーズごとの必読ナレッジをまとめています。</p><button onClick={() => toast.info("オンボーディングガイドは今後の機能です")}>ガイドを開く <ArrowUpRight size={15} /></button></div>
+        {items.length === 0 ? <>
+          <img src="/manus-storage/relay-knowledge-stack_7b1a6485.jpg" alt="ナレッジの蓄積を表すフォルダとカード" />
+          <div><span className="eyebrow">ONBOARDING</span><h3>まず読む、<br />営業の基本線。</h3><p>新しいメンバー向けに、商談フェーズごとの必読ナレッジをまとめています。</p><button onClick={() => toast.info("オンボーディングガイドは今後の機能です")}>ガイドを開く <ArrowUpRight size={15} /></button></div>
+        </> : <div>
+          <span className="eyebrow">CONTEXT</span><h3>表示中のナレッジ</h3>
+          <p>{items.length}件を表示中{activeTag ? `（タグ「${activeTag}」で絞り込み中）` : ""}</p>
+          <p>最終更新：{new Date(items[0].created_at).toLocaleDateString("ja-JP")}</p>
+        </div>}
       </aside>
     </div>
   </section>;

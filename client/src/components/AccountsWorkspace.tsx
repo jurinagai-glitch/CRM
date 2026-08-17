@@ -51,6 +51,7 @@ function categoryTone(category: string): "neutral" | "navy" | "moss" | "ochre" |
 
 const DEAL_STAGES = ["初回接触", "提案", "交渉", "クロージング", "成約", "失注"];
 const PROPOSAL_TYPES = ["提案書", "見積書", "契約書", "その他"];
+const COMPANY_CATEGORIES = ["新規開拓", "既存代理店（店舗）", "既存代理店（マンション）", "直接販売"];
 
 export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen: ScreenTarget) => void }) {
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -65,8 +66,19 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
   const [newProposalTitle, setNewProposalTitle] = useState("");
   const [newProposalUrl, setNewProposalUrl] = useState("");
   const [newProposalType, setNewProposalType] = useState(PROPOSAL_TYPES[0]);
+  const [showNewCompanyForm, setShowNewCompanyForm] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState("");
+  const [newCompanyCategory, setNewCompanyCategory] = useState(COMPANY_CATEGORIES[0]);
 
   useEffect(() => {
+    const jumpId = sessionStorage.getItem("relay:jumpToCompanyId");
+    if (jumpId) {
+      setSelectedId(jumpId);
+      sessionStorage.removeItem("relay:jumpToCompanyId");
+    }
+  }, []);
+
+  const loadCompanies = () => {
     const params = new URLSearchParams();
     if (query) params.set("q", query);
     fetch(`/api/companies?${params.toString()}`, { credentials: "include" })
@@ -77,8 +89,32 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
         if (!selectedId && data.companies?.[0]) setSelectedId(data.companies[0].id);
       })
       .catch(() => toast.error("取引先一覧の取得に失敗しました"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(loadCompanies, [query]);
+
+  const createCompany = async () => {
+    if (!newCompanyName.trim()) return toast.error("会社名を入力してください");
+    const res = await fetch("/api/companies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ name: newCompanyName, category: newCompanyCategory }),
+    });
+    const data = await res.json();
+    if (res.status === 409) {
+      toast.error(`同じ名前の取引先が既にあります（${data.existing_company.category}）`);
+      setSelectedId(data.existing_company.id);
+      return;
+    }
+    if (!res.ok) return toast.error(data.error || "取引先の作成に失敗しました");
+    setNewCompanyName("");
+    setShowNewCompanyForm(false);
+    loadCompanies();
+    setSelectedId(data.company.id);
+    toast.success("取引先を登録しました");
+  };
 
   const reloadDetail = () => {
     if (!selectedId) return;
@@ -152,12 +188,20 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
   };
 
   return <section className="screen-page enterprise-workspace account-workspace">
-    <header className="enterprise-page-head"><div><p className="eyebrow">ACCOUNTS · CUSTOMER WORKSPACE</p><h1>取引先の判断を、<br />一つの文脈で進める。</h1><p>過去の商談記録を、取引先ごとの作業面に集約します。</p></div><div className="enterprise-head-actions"><Button className="ink-button" onClick={() => toast.success("取引先登録フォームを開きました")}><Plus size={16} />取引先を登録</Button></div></header>
+    <header className="enterprise-page-head"><div><p className="eyebrow">ACCOUNTS · CUSTOMER WORKSPACE</p><h1>取引先の判断を、<br />一つの文脈で進める。</h1><p>過去の商談記録を、取引先ごとの作業面に集約します。</p></div><div className="enterprise-head-actions"><Button className="ink-button" onClick={() => setShowNewCompanyForm((v) => !v)}><Plus size={16} />取引先を登録</Button></div></header>
 
     <div className="workflow-ribbon" aria-label="MVPの営業フロー"><span className="active">01 インバウンド</span><ChevronRight size={14} /><span className="active">02 取引先・商談</span><ChevronRight size={14} /><span>03 議事録を確定</span><ChevronRight size={14} /><span>04 次アクション</span></div>
 
+    {showNewCompanyForm && <section className="conversion-sheet" style={{ marginBottom: 16 }}>
+      <div className="conversion-grid">
+        <label>会社名<input value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)} /></label>
+        <label>区分<select value={newCompanyCategory} onChange={(e) => setNewCompanyCategory(e.target.value)}>{COMPANY_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
+      </div>
+      <div className="conversion-footer"><span /><Button className="ink-button" onClick={createCompany}>登録する</Button></div>
+    </section>}
+
     <div className="enterprise-shell account-shell">
-      <aside className="worklist-column"><div className="worklist-head"><div><span className="eyebrow">WORKLIST</span><h2>取引先 <b>{companies.length}</b></h2></div><button onClick={() => toast.info("表示列の設定を開きました")} aria-label="取引先一覧の設定"><MoreHorizontal size={18} /></button></div><label className="worklist-search"><Search size={15} /><input aria-label="取引先を検索" placeholder="会社名で検索" value={query} onChange={(e) => setQuery(e.target.value)} /></label><div className="account-rows">{loading ? <p className="queue-empty">読み込み中...</p> : companies.map((item, index) => <button className={`account-row ${selectedId === item.id ? "selected" : ""}`} key={item.id} onClick={() => setSelectedId(item.id)}><span className="account-row-number">{String(index + 1).padStart(2, "0")}</span><span className="account-row-main"><b>{item.name}</b><small>商談 {item.meeting_count}件</small></span><span className="account-row-meta"><Status tone={categoryTone(item.category)}>{item.category}</Status></span><ChevronRight size={15} /></button>)}</div><button className="worklist-add" onClick={() => toast.success("取引先の作成を開始しました")}><CopyPlus size={15} />取引先を追加</button></aside>
+      <aside className="worklist-column"><div className="worklist-head"><div><span className="eyebrow">WORKLIST</span><h2>取引先 <b>{companies.length}</b></h2></div><button onClick={() => toast.info("表示列の設定は今後の機能です")} aria-label="取引先一覧の設定"><MoreHorizontal size={18} /></button></div><label className="worklist-search"><Search size={15} /><input aria-label="取引先を検索" placeholder="会社名で検索" value={query} onChange={(e) => setQuery(e.target.value)} /></label><div className="account-rows">{loading ? <p className="queue-empty">読み込み中...</p> : companies.map((item, index) => <button className={`account-row ${selectedId === item.id ? "selected" : ""}`} key={item.id} onClick={() => setSelectedId(item.id)}><span className="account-row-number">{String(index + 1).padStart(2, "0")}</span><span className="account-row-main"><b>{item.name}</b><small>商談 {item.meeting_count}件</small></span><span className="account-row-meta"><Status tone={categoryTone(item.category)}>{item.category}</Status></span><ChevronRight size={15} /></button>)}{!loading && companies.length === 0 && <p className="queue-empty">該当する取引先がありません。</p>}</div><button className="worklist-add" onClick={() => setShowNewCompanyForm((v) => !v)}><CopyPlus size={15} />取引先を追加</button></aside>
 
       {detail ? <>
       <main className="decision-column"><div className="entity-banner"><div className="entity-mark"><Building2 size={18} /></div><div className="entity-title"><div className="entity-overline"><Status tone={categoryTone(detail.company.category)}>{detail.company.category}</Status><span>商談 {detail.company.meeting_count}件</span></div><h2>{detail.company.name}</h2>{detail.company.name_variants.length > 0 && <p>旧表記: {detail.company.name_variants.join(" / ")}</p>}</div><button className="entity-more" onClick={() => toast.info("取引先のメニューを開きました")} aria-label="取引先メニュー"><MoreHorizontal size={19} /></button></div>

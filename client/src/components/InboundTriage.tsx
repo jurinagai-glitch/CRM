@@ -40,7 +40,13 @@ export default function InboundTriage({ onNavigate }: { onNavigate: (screen: Scr
     ]).then(([openData, excludedData]) => {
       setInquiries(openData.inquiries ?? []);
       setDismissedInquiries(excludedData.inquiries ?? []);
-      if (!selectedId && openData.inquiries?.[0]) setSelectedId(openData.inquiries[0].id);
+      const jumpId = sessionStorage.getItem("relay:openInquiryId");
+      if (jumpId) {
+        sessionStorage.removeItem("relay:openInquiryId");
+        setSelectedId(jumpId);
+      } else if (!selectedId && openData.inquiries?.[0]) {
+        setSelectedId(openData.inquiries[0].id);
+      }
     }).catch(() => toast.error("問い合わせ一覧の取得に失敗しました"));
   };
 

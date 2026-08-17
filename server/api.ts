@@ -89,14 +89,43 @@ api.get(
     }
     const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
     const countResult = await pool.query(`select count(*) from companies ${where}`, params);
+    const orderBy = req.query.sort === "recent"
+      ? `(select max(m.meeting_date) from meeting_notes m where m.company_id = companies.id) desc nulls last, name asc`
+      : `meeting_count desc, name asc`;
     const result = await pool.query(
-      `select id, name, category, name_variants, meeting_count, created_at
+      `select id, name, category, name_variants, meeting_count, created_at,
+         (select max(m.meeting_date) from meeting_notes m where m.company_id = companies.id) as last_meeting_date
        from companies ${where}
-       order by meeting_count desc, name asc
+       order by ${orderBy}
        limit $${params.length + 1} offset $${params.length + 2}`,
       [...params, limit, offset]
     );
     res.json({ companies: result.rows, total: Number(countResult.rows[0].count) });
+  })
+);
+
+const COMPANY_CATEGORIES = ["新規開拓", "既存代理店（店舗）", "既存代理店（マンション）", "直接販売"];
+
+api.post(
+  "/companies",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { name, category } = req.body ?? {};
+    if (!name || !name.trim()) return res.status(400).json({ error: "会社名は必須です" });
+    if (category && !COMPANY_CATEGORIES.includes(category)) {
+      return res.status(400).json({ error: `categoryは次のいずれかにしてください: ${COMPANY_CATEGORIES.join(", ")}` });
+    }
+
+    const existing = await pool.query("select id, name, category from companies where lower(name) = lower($1)", [name.trim()]);
+    if (existing.rows[0]) {
+      return res.status(409).json({ error: "同じ名前の取引先が既に登録されています", existing_company: existing.rows[0] });
+    }
+
+    const result = await pool.query(
+      `insert into companies (name, category, meeting_count) values ($1, coalesce($2, '新規開拓'), 0) returning *`,
+      [name.trim(), category || null]
+    );
+    res.json({ company: result.rows[0] });
   })
 );
 
@@ -190,6 +219,39 @@ api.delete(
   asyncHandler(async (req, res) => {
     await pool.query("delete from contacts where id = $1", [req.params.id]);
     res.json({ ok: true });
+  })
+);
+
+api.get(
+  "/meeting-summaries",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const status = req.query.status === "approved" ? "approved" : "draft";
+    const result = await pool.query(
+      `select s.*, m.company_id, c.name as company_name
+       from meeting_summaries s
+       join meeting_notes m on m.id = s.meeting_note_id
+       join companies c on c.id = m.company_id
+       where s.status = $1
+       order by s.created_at desc`,
+      [status]
+    );
+    res.json({ summaries: result.rows });
+  })
+);
+
+// 保留中の下書きを再度開くための単票取得。次アクション候補はまだ next_actions に永続化されていないため
+// （永続化は承認時のみ）、原文からルールベース抽出を再実行して候補を作り直す。
+api.get(
+  "/meeting-summaries/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const summary = await pool.query("select * from meeting_summaries where id = $1", [req.params.id]);
+    if (!summary.rows[0]) return res.status(404).json({ error: "下書きが見つかりません" });
+    const note = await pool.query("select * from meeting_notes where id = $1", [summary.rows[0].meeting_note_id]);
+    const company = await pool.query("select id, name, category from companies where id = $1", [note.rows[0]?.company_id]);
+    const extracted = extractFromText(note.rows[0]?.content ?? note.rows[0]?.raw_text ?? "");
+    res.json({ summary: summary.rows[0], meeting_note: note.rows[0], company: company.rows[0] ?? null, suggested_actions: extracted.actions });
   })
 );
 
@@ -646,13 +708,19 @@ api.get(
       [category]
     );
 
+    // Below this, a "common" value is just 1-2 companies coincidentally sharing
+    // a phrase — showing it as a trend would overstate what the data supports.
+    const MIN_SAMPLE_SIZE = 3;
+    const enoughData = summaries.rows.length >= MIN_SAMPLE_SIZE;
+
     res.json({
       category,
       sample_size: summaries.rows.length,
-      common_issues: topValues(summaries.rows, "issue"),
-      common_budgets: topValues(summaries.rows, "budget"),
-      common_decision_makers: topValues(summaries.rows, "decision_maker"),
-      common_timelines: topValues(summaries.rows, "timeline"),
+      min_sample_size: MIN_SAMPLE_SIZE,
+      common_issues: enoughData ? topValues(summaries.rows, "issue") : [],
+      common_budgets: enoughData ? topValues(summaries.rows, "budget") : [],
+      common_decision_makers: enoughData ? topValues(summaries.rows, "decision_maker") : [],
+      common_timelines: enoughData ? topValues(summaries.rows, "timeline") : [],
       deal_outcomes: dealOutcomes.rows,
     });
   })

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowUpRight, BookOpen, ChevronRight, ExternalLink, Search, Send, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { apiRequest } from "@/lib/api";
 
 type Company = { id: string; name: string; category: string };
 
@@ -24,6 +25,7 @@ type ValueCount = { value: string; count: number };
 type ApproachData = {
   category: string;
   sample_size: number;
+  min_sample_size: number;
   common_issues: ValueCount[];
   common_budgets: ValueCount[];
   common_decision_makers: ValueCount[];
@@ -53,26 +55,17 @@ export default function MeetingBriefing() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    fetch(`/api/companies?q=${encodeURIComponent(search)}&limit=8`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
-        setCompanies(data.companies ?? []);
-        if (!companyId && data.companies?.[0]) setCompanyId(data.companies[0].id);
-      })
-      .catch(() => toast.error("取引先の取得に失敗しました"));
+    apiRequest<{ companies: Company[] }>(`/api/companies?q=${encodeURIComponent(search)}&limit=8`).then((data) => {
+      setCompanies(data?.companies ?? []);
+      if (!companyId && data?.companies?.[0]) setCompanyId(data.companies[0].id);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
   const loadBriefing = () => {
     if (!companyId) return;
-    fetch(`/api/companies/${companyId}/briefing`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setBriefing(data))
-      .catch(() => toast.error("ブリーフィングの取得に失敗しました"));
-    fetch(`/api/companies/${companyId}/similar-approach`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setApproach(data))
-      .catch(() => toast.error("同区分の傾向の取得に失敗しました"));
+    apiRequest<BriefingData>(`/api/companies/${companyId}/briefing`).then((data) => { if (data) setBriefing(data); });
+    apiRequest<ApproachData>(`/api/companies/${companyId}/similar-approach`).then((data) => { if (data) setApproach(data); });
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,32 +85,37 @@ export default function MeetingBriefing() {
           {briefing.deal.amount && <StatusPill>{`¥${Number(briefing.deal.amount).toLocaleString()}`}</StatusPill>}
         </div>}
         <div className="brief-sections">
-          <section><h3>企業情報を調べる</h3>
-            <p style={{ marginBottom: 8 }}>会社名から検索候補を用意しています。完全一致は保証されないため、内容は目視で確認してください。</p>
-            <div className="knowledge-reference-list">
-              {companyResearchLinks(briefing.company.name).map((link) => <a key={link.href} className="knowledge-reference" href={link.href} target="_blank" rel="noopener noreferrer"><ExternalLink size={17} /><span><b>{link.label}</b></span></a>)}
-            </div>
-          </section>
           <section><h3>今回、確認すること</h3>
             {briefing.to_confirm.length > 0 ? <ol>{briefing.to_confirm.map((item, i) => <li key={i}>{item}</li>)}</ol> : <p>直近の議事録から積み残しの確認事項は見つかりませんでした。</p>}
           </section>
           <section><h3>前回からの変化</h3>
             <p>{briefing.changes_since_last.length > 0 ? briefing.changes_since_last.join(" / ") : "直近2回分の承認済み議事録がまだないため、変化を比較できません。"}</p>
           </section>
-          <section><h3>使えるチームの学び</h3>
-            {briefing.knowledge[0] ? <div className="knowledge-reference"><BookOpen size={17} /><span><b>{briefing.knowledge[0].title}</b><small>ナレッジ：{briefing.knowledge[0].tags.join(" / ") || "タグなし"}</small></span><ArrowUpRight size={16} /></div> : <p>関連するナレッジはまだ登録されていません。</p>}
-          </section>
-          <section><h3>同区分（{approach?.category ?? briefing.company.category}）の商談傾向</h3>
-            {!approach || approach.sample_size === 0 ? <p>同区分の承認済み議事録がまだ十分にないため、傾向を示せません。</p> : <>
-              <p style={{ marginBottom: 8 }}>過去 {approach.sample_size} 件の承認済み議事録から集計した、ルールベースの傾向です（AIによる生成ではありません）。</p>
-              {approach.common_issues.length > 0 && <p><b>よくある課題：</b>{approach.common_issues.map((v) => `${v.value}（${v.count}件）`).join("、")}</p>}
-              {approach.common_budgets.length > 0 && <p><b>予算感：</b>{approach.common_budgets.map((v) => `${v.value}（${v.count}件）`).join("、")}</p>}
-              {approach.common_decision_makers.length > 0 && <p><b>決裁パターン：</b>{approach.common_decision_makers.map((v) => `${v.value}（${v.count}件）`).join("、")}</p>}
-              {approach.common_timelines.length > 0 && <p><b>導入時期：</b>{approach.common_timelines.map((v) => `${v.value}（${v.count}件）`).join("、")}</p>}
-              {approach.deal_outcomes.length > 0 && <p><b>商談の状況：</b>{approach.deal_outcomes.map((o) => `${o.stage}/${o.status}（${o.count}件）`).join("、")}</p>}
-            </>}
-          </section>
         </div>
+        <details className="brief-supplemental">
+          <summary>補助情報を見る（企業情報・同区分の傾向・チームの学び）</summary>
+          <div className="brief-sections">
+            <section><h3>企業情報を調べる</h3>
+              <p style={{ marginBottom: 8 }}>会社名から検索候補を用意しています。外部サイトでの検索となり、検索語（会社名）はブラウザから検索先へ送信されます。完全一致は保証されないため、内容は目視で確認してください。</p>
+              <div className="knowledge-reference-list">
+                {companyResearchLinks(briefing.company.name).map((link) => <a key={link.href} className="knowledge-reference" href={link.href} target="_blank" rel="noopener noreferrer"><ExternalLink size={17} /><span><b>{link.label}</b></span></a>)}
+              </div>
+            </section>
+            <section><h3>同じ顧客区分（{approach?.category ?? briefing.company.category}）の参考傾向</h3>
+              {!approach || approach.sample_size < approach.min_sample_size ? <p>同区分の承認済み議事録がまだ{approach?.min_sample_size ?? 3}件に達していないため、傾向を示せません（承認済み議事録を増やすと表示されます）。</p> : <>
+                <p style={{ marginBottom: 8 }}>同じ顧客区分の承認済み議事録（自社を除く、母数 {approach.sample_size}件）を集計した、ルールベースの参考傾向です（AIによる生成ではありません）。業種・規模・商談フェーズが異なる可能性がある点にご注意ください。</p>
+                {approach.common_issues.length > 0 && <p><b>よくある課題：</b>{approach.common_issues.map((v) => `${v.value}（${v.count}件）`).join("、")}</p>}
+                {approach.common_budgets.length > 0 && <p><b>予算感：</b>{approach.common_budgets.map((v) => `${v.value}（${v.count}件）`).join("、")}</p>}
+                {approach.common_decision_makers.length > 0 && <p><b>決裁パターン：</b>{approach.common_decision_makers.map((v) => `${v.value}（${v.count}件）`).join("、")}</p>}
+                {approach.common_timelines.length > 0 && <p><b>導入時期：</b>{approach.common_timelines.map((v) => `${v.value}（${v.count}件）`).join("、")}</p>}
+                {approach.deal_outcomes.length > 0 && <p><b>商談の状況：</b>{approach.deal_outcomes.map((o) => `${o.stage}/${o.status}（${o.count}件）`).join("、")}</p>}
+              </>}
+            </section>
+            <section><h3>使えるチームの学び</h3>
+              {briefing.knowledge[0] ? <div className="knowledge-reference"><BookOpen size={17} /><span><b>{briefing.knowledge[0].title}</b><small>ナレッジ：{briefing.knowledge[0].tags.join(" / ") || "タグなし"}</small></span><ArrowUpRight size={16} /></div> : <p>関連するナレッジはまだ登録されていません。</p>}
+            </section>
+          </div>
+        </details>
         <div className="brief-footer">
           <span><Sparkles size={15} />参照：議事録 {briefing.reference_counts.meetings}件・提案書 {briefing.reference_counts.proposals}件・ナレッジ {briefing.reference_counts.knowledge}件</span>
           <button onClick={() => toast.info("共有機能は今後の機能です")}>共有する <Send size={15} /></button>
