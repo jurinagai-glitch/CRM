@@ -129,6 +129,34 @@ api.post(
   })
 );
 
+// 誤って作成した取引先だけを削除できるようにする。商談・議事録などの実データが
+// 1件でも紐づいていれば拒否し、履歴の消失を防ぐ（アーカイブ機能は別途検討）。
+api.delete(
+  "/companies/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const counts = await pool.query(
+      `select
+         (select count(*) from deals where company_id = $1) as deals,
+         (select count(*) from contacts where company_id = $1) as contacts,
+         (select count(*) from meeting_notes where company_id = $1) as meetings,
+         (select count(*) from proposals where company_id = $1) as proposals,
+         (select count(*) from knowledge_items where source_company_id = $1) as knowledge,
+         (select count(*) from next_actions where company_id = $1) as actions,
+         (select count(*) from inbound_inquiries where converted_company_id = $1) as inquiries`,
+      [req.params.id]
+    );
+    const row = counts.rows[0];
+    const total = Object.values(row).reduce((sum: number, v) => sum + Number(v), 0);
+    if (total > 0) {
+      return res.status(409).json({ error: "商談・議事録などの記録がある取引先は削除できません。誤って作成した取引先のみ削除できます。" });
+    }
+    const result = await pool.query("delete from companies where id = $1 returning id", [req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: "取引先が見つかりません" });
+    res.json({ ok: true });
+  })
+);
+
 api.get(
   "/companies/:id",
   requireAuth,

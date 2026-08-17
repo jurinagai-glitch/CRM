@@ -160,6 +160,18 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
     toast.success("担当者を登録しました");
   };
 
+  const deleteCompany = async () => {
+    if (!detail) return;
+    if (!window.confirm(`「${detail.company.name}」を削除します。よろしいですか？（商談・議事録等の記録がある場合は削除できません）`)) return;
+    const res = await fetch(`/api/companies/${detail.company.id}`, { method: "DELETE", credentials: "include" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(data.error || "削除に失敗しました");
+    setSelectedId(null);
+    setDetail(null);
+    loadCompanies();
+    toast.success("取引先を削除しました");
+  };
+
   const removeContact = async (id: string) => {
     const result = await apiRequest(`/api/contacts/${id}`, { method: "DELETE" });
     if (!result) return;
@@ -204,7 +216,7 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
       <aside className="worklist-column"><div className="worklist-head"><div><span className="eyebrow">WORKLIST</span><h2>取引先 <b>{companies.length}</b></h2></div><button onClick={() => toast.info("表示列の設定は今後の機能です")} aria-label="取引先一覧の設定"><MoreHorizontal size={18} /></button></div><label className="worklist-search"><Search size={15} /><input aria-label="取引先を検索" placeholder="会社名で検索" value={query} onChange={(e) => setQuery(e.target.value)} /></label><div className="account-rows">{loading ? <p className="queue-empty">読み込み中...</p> : companies.map((item, index) => <button className={`account-row ${selectedId === item.id ? "selected" : ""}`} key={item.id} onClick={() => setSelectedId(item.id)}><span className="account-row-number">{String(index + 1).padStart(2, "0")}</span><span className="account-row-main"><b>{item.name}</b><small>商談 {item.meeting_count}件</small></span><span className="account-row-meta"><Status tone={categoryTone(item.category)}>{item.category}</Status></span><ChevronRight size={15} /></button>)}{!loading && companies.length === 0 && <p className="queue-empty">該当する取引先がありません。</p>}</div><button className="worklist-add" onClick={() => setShowNewCompanyForm((v) => !v)}><CopyPlus size={15} />取引先を追加</button></aside>
 
       {detail ? <>
-      <main className="decision-column"><div className="entity-banner"><div className="entity-mark"><Building2 size={18} /></div><div className="entity-title"><div className="entity-overline"><Status tone={categoryTone(detail.company.category)}>{detail.company.category}</Status><span>商談 {detail.company.meeting_count}件</span></div><h2>{detail.company.name}</h2>{detail.company.name_variants.length > 0 && <p>旧表記: {detail.company.name_variants.join(" / ")}</p>}</div><button className="entity-more" onClick={() => toast.info("取引先のメニューを開きました")} aria-label="取引先メニュー"><MoreHorizontal size={19} /></button></div>
+      <main className="decision-column"><div className="entity-banner"><div className="entity-mark"><Building2 size={18} /></div><div className="entity-title"><div className="entity-overline"><Status tone={categoryTone(detail.company.category)}>{detail.company.category}</Status><span>商談 {detail.company.meeting_count}件</span></div><h2>{detail.company.name}</h2>{detail.company.name_variants.length > 0 && <p>旧表記: {detail.company.name_variants.join(" / ")}</p>}</div><button className="entity-more" onClick={deleteCompany} aria-label="取引先を削除"><Trash2 size={19} /></button></div>
 
         {latestMeeting ? <section className="current-decision"><div className="decision-label"><span className="eyebrow">LATEST MEETING</span><Status tone="navy">{latestMeeting.meeting_date ?? "日付不明"}</Status></div><h3>{latestMeeting.contact ? `${latestMeeting.contact}との商談` : "直近の商談記録"}</h3><p>{latestMeeting.content ? latestMeeting.content.slice(0, 140) : "本文の記録はありません。"}</p><div className="decision-actions"><Button className="ink-button" onClick={() => onNavigate("meetings")}><FileText size={16} />新しい議事録を貼り付ける</Button></div></section> : <section className="current-decision"><h3>まだ商談記録がありません</h3><p>議事録を貼り付けると、ここに最新の商談が表示されます。</p></section>}
 
