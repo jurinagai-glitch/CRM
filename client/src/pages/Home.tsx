@@ -44,7 +44,7 @@ export default function Home() {
   const initialScreen = (() => {
     const requested = new URLSearchParams(window.location.search).get("screen") as Screen | null;
     const availableScreens: Screen[] = ["overview", "inbounds", "accounts", "meetings", "briefing", "knowledge", "actions", "renewals", "reports"];
-    return requested && availableScreens.includes(requested) ? requested : "overview";
+    return requested && availableScreens.includes(requested) ? requested : "accounts";
   })();
   const [screen, setScreen] = useState<Screen>(initialScreen);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -81,10 +81,18 @@ export default function Home() {
     return () => clearTimeout(timeout);
   }, [searchQuery, searchOpen]);
 
-  const navItems: { id: Screen; label: string; icon: typeof LayoutDashboard; count?: number }[] = [
-    { id: "overview", label: "自動化", icon: LayoutDashboard, count: navCounts.needsAttention },
+  const primaryNavItems: { id: Screen; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "accounts", label: "顧客", icon: Building2 },
+    { id: "meetings", label: "議事録", icon: FileText },
+  ];
+  const secondaryNavItems: { id: Screen; label: string; icon: typeof LayoutDashboard; count?: number }[] = [
+    { id: "overview", label: "自動化", icon: LayoutDashboard, count: navCounts.needsAttention },
     { id: "actions", label: "実行", icon: ListTodo, count: navCounts.openActions },
+    { id: "inbounds", label: "問い合わせ", icon: Inbox },
+    { id: "renewals", label: "契約・更新", icon: Building2 },
+    { id: "briefing", label: "準備", icon: Sparkles },
+    { id: "knowledge", label: "ナレッジ", icon: BookOpen },
+    { id: "reports", label: "レポート", icon: BarChart3 },
   ];
 
   const jumpToCompany = (id: string) => {
@@ -108,7 +116,14 @@ export default function Home() {
   return <div className="crm-app">
     <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
       <div className="brand"><img src="/manus-storage/relay-mark_a7cdb14a.png" alt="Relay CRM" /><span>Relay <em>CRM</em></span><button className="mobile-close" onClick={() => setSidebarOpen(false)} aria-label="ナビゲーションを閉じる"><X size={19} /></button></div>
-      <nav><p className="nav-label">WORKSPACE</p>{navItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={screen === item.id ? "active" : ""} onClick={() => selectScreen(item.id)}><Icon size={18} /><span>{item.label}</span>{item.count && <b>{item.count}</b>}</button>})}<div className="nav-divider" /><p className="nav-label">SHORTCUTS</p><button onClick={() => selectScreen("inbounds")}><Inbox size={18} /><span>問い合わせ</span><i>1</i></button><button onClick={() => selectScreen("meetings")}><FileText size={18} /><span>議事録</span><i>2</i></button><button className={screen === "renewals" ? "active" : ""} onClick={() => selectScreen("renewals")}><Building2 size={18} /><span>契約・更新</span></button><button className={screen === "briefing" ? "active" : ""} onClick={() => selectScreen("briefing")}><Sparkles size={18} /><span>準備</span></button><button className={screen === "knowledge" ? "active" : ""} onClick={() => selectScreen("knowledge")}><BookOpen size={18} /><span>ナレッジ</span></button><button className={screen === "reports" ? "active" : ""} onClick={() => selectScreen("reports")}><BarChart3 size={18} /><span>レポート</span></button></nav>
+      <nav>
+        <p className="nav-label">WORKSPACE</p>
+        {primaryNavItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={screen === item.id ? "active" : ""} onClick={() => selectScreen(item.id)}><Icon size={18} /><span>{item.label}</span></button>; })}
+        <details className="nav-more">
+          <summary>その他</summary>
+          {secondaryNavItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={screen === item.id ? "active" : ""} onClick={() => selectScreen(item.id)}><Icon size={18} /><span>{item.label}</span>{!!item.count && <b>{item.count}</b>}</button>; })}
+        </details>
+      </nav>
       <div className="sidebar-bottom"><button onClick={() => toast.info("ヘルプセンターを開きました")}><CircleHelp size={17} />ヘルプ</button><button className="profile" onClick={() => toast.info("プロフィール設定を開きました")}><MiniAvatar tone="ochre">瑞</MiniAvatar><span><b>佐々木 瑞希</b><small>営業企画</small></span><MoreHorizontal size={18} /></button></div>
     </aside>
     {sidebarOpen && <button aria-label="ナビゲーションを閉じる" className="mobile-overlay" onClick={() => setSidebarOpen(false)} />}

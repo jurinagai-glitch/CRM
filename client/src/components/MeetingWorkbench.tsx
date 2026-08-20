@@ -12,6 +12,7 @@ type ScreenTarget = "overview" | "inbounds" | "accounts" | "meetings" | "briefin
 type Company = { id: string; name: string; category: string };
 
 const COMPANY_CATEGORIES = ["新規開拓", "既存代理店（店舗）", "既存代理店（マンション）", "直接販売"];
+const DEAL_STAGES = ["初回接触", "提案", "交渉", "クロージング", "成約", "失注"];
 
 function CompanyPicker({ selected, onSelect }: { selected: Company | null; onSelect: (c: Company) => void }) {
   const [query, setQuery] = useState("");
@@ -81,10 +82,22 @@ type Draft = {
   timeline: string;
   unresolved: string | null;
   actions: { description: string; assignee: string; due_date: string; priority: "高" | "中" | "低" }[];
+  dealStage: string;
 };
 
 function DraftTag({ children, tone = "neutral" }: { children: string; tone?: "neutral" | "moss" | "ochre" | "navy" }) {
   return <span className={`enterprise-status ${tone}`}>{children}</span>;
+}
+
+async function fetchOpenDealStage(companyId: string): Promise<string> {
+  try {
+    const res = await fetch(`/api/companies/${companyId}`, { credentials: "include" });
+    const data = await res.json();
+    const openDeal = (data.deals ?? []).find((d: { status: string }) => d.status === "進行中");
+    return openDeal?.stage ?? DEAL_STAGES[0];
+  } catch {
+    return DEAL_STAGES[0];
+  }
 }
 
 export default function MeetingWorkbench({ onNavigate }: { onNavigate: (screen: ScreenTarget) => void }) {
@@ -100,10 +113,11 @@ export default function MeetingWorkbench({ onNavigate }: { onNavigate: (screen: 
     sessionStorage.removeItem("relay:openSummaryId");
     fetch(`/api/meeting-summaries/${openId}`, { credentials: "include" })
       .then((r) => r.json())
-      .then((data) => {
+      .then(async (data) => {
         if (!data.summary) return;
         setSelectedCompany(data.company);
         setContent(data.meeting_note?.content ?? data.meeting_note?.raw_text ?? "");
+        const dealStage = data.company?.id ? await fetchOpenDealStage(data.company.id) : DEAL_STAGES[0];
         setDraft({
           summaryId: data.summary.id,
           meetingNoteId: data.meeting_note.id,
@@ -120,6 +134,7 @@ export default function MeetingWorkbench({ onNavigate }: { onNavigate: (screen: 
             due_date: "",
             priority: "中" as const,
           })),
+          dealStage,
         });
       })
       .catch(() => toast.error("下書きの取得に失敗しました"));
@@ -138,6 +153,7 @@ export default function MeetingWorkbench({ onNavigate }: { onNavigate: (screen: 
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
+      const dealStage = await fetchOpenDealStage(selectedCompany.id);
       setDraft({
         summaryId: data.summary.id,
         meetingNoteId: data.meeting_note.id,
@@ -154,6 +170,7 @@ export default function MeetingWorkbench({ onNavigate }: { onNavigate: (screen: 
           due_date: "",
           priority: "中" as const,
         })),
+        dealStage,
       });
       setSaved(false);
       toast.success("確認用の下書きを作成しました。保存前に内容を確認してください。");
@@ -191,12 +208,14 @@ export default function MeetingWorkbench({ onNavigate }: { onNavigate: (screen: 
           decision_maker: draft.decision_maker,
           timeline: draft.timeline,
           actions: draft.actions.filter((a) => a.description.trim()),
+          deal_stage: draft.dealStage,
         }),
       });
       if (!res.ok) throw new Error();
+      const data = await res.json();
       setSaved(true);
-      toast.success("確認済みの情報を商談と次アクションへ反映しました");
-      onNavigate("actions");
+      const dealNote = data.deal ? `商談ステージ「${data.deal.stage}」・` : "";
+      toast.success(`${dealNote}次アクション${data.actions?.length ?? 0}件を、この取引先へ反映しました`);
     } catch {
       toast.error("保存に失敗しました");
     } finally {
@@ -215,6 +234,7 @@ export default function MeetingWorkbench({ onNavigate }: { onNavigate: (screen: 
         <div><span>予算</span><input value={draft.budget} onChange={(e) => setDraft({ ...draft, budget: e.target.value })} style={{ width: "100%", border: 0, background: "transparent", fontSize: 12 }} /></div>
         <div><span>決裁</span><input value={draft.decision_maker} onChange={(e) => setDraft({ ...draft, decision_maker: e.target.value })} style={{ width: "100%", border: 0, background: "transparent", fontSize: 12 }} /></div>
         <div><span>時期</span><input value={draft.timeline} onChange={(e) => setDraft({ ...draft, timeline: e.target.value })} style={{ width: "100%", border: 0, background: "transparent", fontSize: 12 }} /></div>
+        <div><span>商談ステージ</span><select value={draft.dealStage} onChange={(e) => setDraft({ ...draft, dealStage: e.target.value })} style={{ width: "100%", border: 0, background: "transparent", fontSize: 12 }}>{DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
       </div></section><section><div className="draft-section-head"><span>03</span><h3>次アクション候補</h3><DraftTag tone="ochre">要確認</DraftTag></div>{draft.actions.length === 0 && <p style={{ fontSize: 11, color: "#8a908a" }}>「➡」で始まる行が見つかりませんでした。手動で追加してください。</p>}{draft.actions.map((a, i) => <div className="draft-action" key={i}><b>{a.description}</b><small style={{ display: "flex", gap: 6, marginTop: 4 }}><input placeholder="担当" value={a.assignee} onChange={(e) => updateAction(i, { assignee: e.target.value })} style={{ width: 70, border: "1px solid #dedbd2", borderRadius: 4, fontSize: 10, padding: 2 }} /><input type="date" value={a.due_date} onChange={(e) => updateAction(i, { due_date: e.target.value })} style={{ border: "1px solid #dedbd2", borderRadius: 4, fontSize: 10, padding: 2 }} /><select value={a.priority} onChange={(e) => updateAction(i, { priority: e.target.value as Draft["actions"][number]["priority"] })} style={{ border: "1px solid #dedbd2", borderRadius: 4, fontSize: 10 }}><option value="高">高</option><option value="中">中</option><option value="低">低</option></select><button onClick={() => removeAction(i)} aria-label="削除"><X size={12} /></button></small></div>)}</section>{draft.unresolved && <section className="unknown-section"><div className="draft-section-head"><span>04</span><h3>未確認の重要事項</h3></div><p>{draft.unresolved}</p></section>}<div className="draft-confirm"><Button className="ink-button" onClick={approve} disabled={working || saved}><Check size={16} />{saved ? "確定済み" : "確認して商談へ反映"}</Button></div></div> : <div className="draft-empty"><Sparkles size={24} /><b>原文をもとに、<br />確認できる下書きを作ります。</b><p>サマリ、ヒアリング項目、次アクション候補を提示します。</p></div>}</aside>
     </div>
   </section>;

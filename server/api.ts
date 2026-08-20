@@ -318,7 +318,10 @@ api.post(
   "/meeting-summaries/:id/approve",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { summary, decisions, issue, budget, decision_maker, timeline, actions } = req.body ?? {};
+    const { summary, decisions, issue, budget, decision_maker, timeline, actions, deal_stage } = req.body ?? {};
+    if (deal_stage && !DEAL_STAGES.includes(deal_stage)) {
+      return res.status(400).json({ error: `deal_stageは次のいずれかにしてください: ${DEAL_STAGES.join(", ")}` });
+    }
     const user = (req as unknown as { user: SessionUser }).user;
 
     const client = await pool.connect();
@@ -331,17 +334,20 @@ api.post(
         return res.status(404).json({ error: "下書きが見つかりません" });
       }
 
+      const note = await client.query("select company_id from meeting_notes where id = $1", [summaryRow.rows[0].meeting_note_id]);
+      const companyId = note.rows[0]?.company_id;
+
       if (summaryRow.rows[0].status === "approved") {
         const existingActions = await client.query(
           "select * from next_actions where source_summary_id = $1 order by source_action_index",
           [req.params.id]
         );
+        const existingDeal = companyId
+          ? await client.query("select * from deals where company_id = $1 and status = '進行中' order by created_at desc limit 1", [companyId])
+          : { rows: [] };
         await client.query("ROLLBACK");
-        return res.json({ summary: summaryRow.rows[0], actions: existingActions.rows, already_approved: true });
+        return res.json({ summary: summaryRow.rows[0], actions: existingActions.rows, deal: existingDeal.rows[0] ?? null, already_approved: true });
       }
-
-      const note = await client.query("select company_id from meeting_notes where id = $1", [summaryRow.rows[0].meeting_note_id]);
-      const companyId = note.rows[0]?.company_id;
 
       const updated = await client.query(
         `update meeting_summaries set
@@ -371,8 +377,32 @@ api.post(
         await client.query("update companies set meeting_count = meeting_count + 1 where id = $1", [companyId]);
       }
 
+      // 商談記録を「議事録貼り付け」だけで完結させるため、承認と同時に商談ステージも
+      // 反映する。進行中の商談があればステージを更新し、なければ新規に作成する。
+      let deal = null;
+      if (companyId && deal_stage) {
+        const openDeal = await client.query(
+          "select * from deals where company_id = $1 and status = '進行中' order by created_at desc limit 1",
+          [companyId]
+        );
+        if (openDeal.rows[0]) {
+          const dealUpdate = await client.query(
+            "update deals set stage = $1 where id = $2 returning *",
+            [deal_stage, openDeal.rows[0].id]
+          );
+          deal = dealUpdate.rows[0];
+        } else {
+          const companyRow = await client.query("select name from companies where id = $1", [companyId]);
+          const dealInsert = await client.query(
+            `insert into deals (company_id, name, stage) values ($1, $2, $3) returning *`,
+            [companyId, `${companyRow.rows[0]?.name ?? "新規"}の商談`, deal_stage]
+          );
+          deal = dealInsert.rows[0];
+        }
+      }
+
       await client.query("COMMIT");
-      res.json({ summary: updated.rows[0], actions: createdActions });
+      res.json({ summary: updated.rows[0], actions: createdActions, deal });
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
