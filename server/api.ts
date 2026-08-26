@@ -418,8 +418,8 @@ api.get(
   asyncHandler(async (req, res) => {
     const status = typeof req.query.status === "string" && ACTION_STATUSES.includes(req.query.status) ? req.query.status : "open";
     const result = await pool.query(
-      `select a.*, c.name as company_name
-       from next_actions a join companies c on c.id = a.company_id
+      `select a.*, coalesce(c.name, a.company_name_text) as company_name, (c.id is not null) as company_linked
+       from next_actions a left join companies c on c.id = a.company_id
        where a.status = $1
        order by a.due_date asc nulls last, a.created_at asc`,
       [status]
@@ -428,24 +428,29 @@ api.get(
   })
 );
 
-// ボードから直接タスクを作成する（議事録経由でなくても、顧客に紐づくタスクを作れるようにする）
+// ボードから直接タスクを作成する。取引先は既存のものへ紐づける、自由入力の名前だけ残す、
+// 何も入力しない、のいずれも許可する（議事録経由でなくてもタスクを作れるようにする）。
 api.post(
   "/next-actions",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { company_id, description, assignee, due_date, priority } = req.body ?? {};
-    if (!company_id) return res.status(400).json({ error: "取引先を選択してください" });
+    const { company_id, company_name, description, assignee, due_date, priority } = req.body ?? {};
     if (!description || !description.trim()) return res.status(400).json({ error: "タスク内容を入力してください" });
     if (priority && !ACTION_PRIORITIES.includes(priority)) {
       return res.status(400).json({ error: `priorityは次のいずれかにしてください: ${ACTION_PRIORITIES.join(", ")}` });
     }
+    if (company_id) {
+      const company = await pool.query("select id from companies where id = $1", [company_id]);
+      if (!company.rows[0]) return res.status(400).json({ error: "指定された取引先が見つかりません" });
+    }
     const result = await pool.query(
-      `insert into next_actions (company_id, description, assignee, due_date, priority)
-       values ($1, $2, $3, $4, coalesce($5, '中')) returning *`,
-      [company_id, description.trim(), assignee || null, due_date || null, priority || null]
+      `insert into next_actions (company_id, company_name_text, description, assignee, due_date, priority)
+       values ($1, $2, $3, $4, $5, coalesce($6, '中')) returning *`,
+      [company_id || null, company_id ? null : (company_name?.trim() || null), description.trim(), assignee || null, due_date || null, priority || null]
     );
     const withCompany = await pool.query(
-      "select a.*, c.name as company_name from next_actions a join companies c on c.id = a.company_id where a.id = $1",
+      `select a.*, coalesce(c.name, a.company_name_text) as company_name, (c.id is not null) as company_linked
+       from next_actions a left join companies c on c.id = a.company_id where a.id = $1`,
       [result.rows[0].id]
     );
     res.json({ action: withCompany.rows[0] });

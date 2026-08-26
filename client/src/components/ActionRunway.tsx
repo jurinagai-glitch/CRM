@@ -13,7 +13,8 @@ type ScreenTarget = "overview" | "inbounds" | "accounts" | "meetings" | "briefin
 
 type ActionItem = {
   id: string;
-  company_name: string;
+  company_name: string | null;
+  company_linked: boolean;
   description: string;
   assignee: string | null;
   due_date: string | null;
@@ -38,34 +39,35 @@ function PriorityTag({ priority }: { priority: ActionItem["priority"] }) {
   return <span className={`enterprise-status ${tone}`}>{priority}</span>;
 }
 
-function CompanyPicker({ onSelect }: { onSelect: (c: Company) => void }) {
-  const [query, setQuery] = useState("");
+// Free-typed company field: any text is accepted as-is (including blank).
+// Typing shows matching existing companies below; picking one links the task
+// to that real company (shows up on its detail page). Typing something that
+// doesn't match just stays as free text, unlinked.
+function CompanyField({ text, linked, onChange }: { text: string; linked: boolean; onChange: (text: string, companyId: string | null) => void }) {
   const [results, setResults] = useState<Company[]>([]);
-  const [selected, setSelected] = useState<Company | null>(null);
 
   useEffect(() => {
-    if (selected || !query.trim()) { setResults([]); return; }
+    if (linked || !text.trim()) { setResults([]); return; }
     const timeout = setTimeout(() => {
-      fetch(`/api/companies?q=${encodeURIComponent(query)}&limit=6`, { credentials: "include" })
+      fetch(`/api/companies?q=${encodeURIComponent(text)}&limit=6`, { credentials: "include" })
         .then((r) => r.json())
         .then((data) => setResults(data.companies ?? []))
         .catch(() => setResults([]));
     }, 200);
     return () => clearTimeout(timeout);
-  }, [query, selected]);
-
-  if (selected) {
-    return <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0" }}>
-      <b>{selected.name}</b>
-      <button className="context-link" onClick={() => { setSelected(null); setQuery(""); onSelect(null as unknown as Company); }}>変更</button>
-    </div>;
-  }
+  }, [text, linked]);
 
   return <div>
-    <input placeholder="取引先を検索" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: "100%", border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }} />
+    <input
+      placeholder="取引先名（未登録の名前でも入力可・空欄可）"
+      value={text}
+      onChange={(e) => onChange(e.target.value, null)}
+      style={{ width: "100%", border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }}
+    />
     {results.length > 0 && <div style={{ marginTop: 4, border: "1px solid #dedbd2", borderRadius: 6, maxHeight: 140, overflowY: "auto" }}>
-      {results.map((c) => <button key={c.id} style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", fontSize: 12 }} onClick={() => { setSelected(c); setResults([]); onSelect(c); }}>{c.name}</button>)}
+      {results.map((c) => <button key={c.id} type="button" style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", fontSize: 12 }} onClick={() => { setResults([]); onChange(c.name, c.id); }}>{c.name}<small style={{ marginLeft: 6, color: "#8a908a" }}>{c.category}</small></button>)}
     </div>}
+    {linked && <small style={{ color: "#4a7a5e" }}>登録済みの取引先に紐づけました</small>}
   </div>;
 }
 
@@ -73,7 +75,7 @@ export default function ActionRunway({ onNavigate }: { onNavigate: (screen: Scre
   const [columns, setColumns] = useState<Record<ActionItem["status"], ActionItem[]>>({ open: [], done: [], dismissed: [] });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [newTask, setNewTask] = useState<{ company: Company | null; description: string; due_date: string; assignee: string; priority: ActionItem["priority"] }>({ company: null, description: "", due_date: "", assignee: "", priority: "中" });
+  const [newTask, setNewTask] = useState<{ companyText: string; companyId: string | null; description: string; due_date: string; assignee: string; priority: ActionItem["priority"] }>({ companyText: "", companyId: null, description: "", due_date: "", assignee: "", priority: "中" });
 
   const load = () => {
     Promise.all(COLUMNS.map((c) => fetch(`/api/next-actions?status=${c.id}`, { credentials: "include" }).then((r) => r.json())))
@@ -91,13 +93,13 @@ export default function ActionRunway({ onNavigate }: { onNavigate: (screen: Scre
   useEffect(load, []);
 
   const createTask = async () => {
-    if (!newTask.company) return toast.error("取引先を選択してください");
     if (!newTask.description.trim()) return toast.error("タスク内容を入力してください");
     const result = await apiRequest("/api/next-actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        company_id: newTask.company.id,
+        company_id: newTask.companyId,
+        company_name: newTask.companyId ? null : newTask.companyText,
         description: newTask.description,
         due_date: newTask.due_date || null,
         assignee: newTask.assignee || null,
@@ -105,7 +107,7 @@ export default function ActionRunway({ onNavigate }: { onNavigate: (screen: Scre
       }),
     });
     if (!result) return;
-    setNewTask({ company: null, description: "", due_date: "", assignee: "", priority: "中" });
+    setNewTask({ companyText: "", companyId: null, description: "", due_date: "", assignee: "", priority: "中" });
     setShowForm(false);
     load();
     toast.success("タスクを追加しました");
@@ -144,7 +146,7 @@ export default function ActionRunway({ onNavigate }: { onNavigate: (screen: Scre
     </header>
     {showForm && <section className="conversion-sheet" style={{ marginBottom: 16 }}>
       <div className="conversion-grid">
-        <label>取引先<CompanyPicker onSelect={(c) => setNewTask({ ...newTask, company: c })} /></label>
+        <label>取引先<CompanyField text={newTask.companyText} linked={!!newTask.companyId} onChange={(text, companyId) => setNewTask({ ...newTask, companyText: text, companyId })} /></label>
         <label>タスク内容<input value={newTask.description} onChange={(e) => setNewTask({ ...newTask, description: e.target.value })} /></label>
         <label>期限<input type="date" value={newTask.due_date} onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })} /></label>
         <label>担当<input value={newTask.assignee} onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })} /></label>
@@ -165,7 +167,7 @@ export default function ActionRunway({ onNavigate }: { onNavigate: (screen: Scre
                   {...dragProvided.draggableProps}
                   {...dragProvided.dragHandleProps}
                 >
-                  <div className="kanban-card-company"><Building2 size={13} />{item.company_name}</div>
+                  {item.company_name && <div className="kanban-card-company"><Building2 size={13} />{item.company_name}{!item.company_linked && <em>（未登録）</em>}</div>}
                   <p>{item.description}</p>
                   <div className="kanban-card-meta">
                     {item.due_date && <span><Calendar size={12} />{item.due_date}</span>}
