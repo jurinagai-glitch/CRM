@@ -1,7 +1,7 @@
 /* Quiet Operations Desk refinement: judgment lines, dotted guides, and paper-first AI drafts. */
 
 .sidebar { background-color: #fcfbf6; }
-.brand { height: 80px; border-bottom: 2px solid #16324f; }
+.brand { height: 80px; border-bottom: 2px solid var(--ink); }
 .brand img { width: 34px; height: 34px; padding: 2px; border: 1px solid #c8d2d7; border-radius: 3px; background: #eef2f2; }
 .sidebar nav { position: relative; }
 .sidebar nav:before { position: absolute; top: 13px; bottom: 13px; left: 23px; width: 1px; background: repeating-linear-gradient(to bottom, transparent 0 3px, #d6d3ca 3px 4px); content: ""; }
@@ -10,14 +10,14 @@
 .nav-divider { height: 0; border-top: 1px dashed #d4d0c7; background: transparent; }
 
 .signal-banner { border-radius: 2px; box-shadow: none; border: 1px solid #d8d3c7; }
-.signal-banner:after { position: absolute; z-index: 1; inset: 0; pointer-events: none; clip-path: inset(0 0 0 42%); background-image: repeating-linear-gradient(to bottom, transparent 0 32px, rgba(22,50,79,.1) 32px 33px), radial-gradient(circle at 86% 79%, #16324f 0 1px, transparent 1.5px); background-size: auto, 9px 9px; opacity: .34; content: ""; }
+.signal-banner:after { position: absolute; z-index: 1; inset: 0; pointer-events: none; clip-path: inset(0 0 0 42%); background-image: repeating-linear-gradient(to bottom, transparent 0 32px, rgba(22,50,79,.1) 32px 33px), radial-gradient(circle at 86% 79%, var(--ink) 0 1px, transparent 1.5px); background-size: auto, 9px 9px; opacity: .34; content: ""; }
 .signal-copy { z-index: 2; background: linear-gradient(90deg, rgba(246,243,236,.95) 0%, rgba(246,243,236,.81) 58%, rgba(246,243,236,0) 100%); }
-.signal-copy:before { position: absolute; top: 28px; left: 19px; width: 2px; height: 70px; background: #bd8531; content: ""; }
+.signal-copy:before { position: absolute; top: 28px; left: 19px; width: 2px; height: 70px; background: var(--warn); content: ""; }
 .signal-copy .eyebrow, .signal-copy h1, .signal-copy > p:not(.eyebrow), .signal-copy .ink-button { position: relative; z-index: 3; }
 .signal-stats { z-index: 3; border-radius: 2px; border: 1px solid #8fa2ad; box-shadow: none; }
 .signal-stats div { border-radius: 0; }
 
-.metrics-strip { border-top: 1px solid #16324f; }
+.metrics-strip { border-top: 1px solid var(--ink); }
 .metrics-strip button { border-left-style: dotted; }
 .metrics-strip button:after { position: absolute; right: 14px; bottom: 12px; color: #aab1ae; font-family: ui-monospace, monospace; font-size: 9px; content: "//"; }
 .paper-panel, .deal-list { border-radius: 2px; box-shadow: none; }
@@ -27,18 +27,18 @@
 .action-row { border-top-color: rgba(22,50,79,.16); }
 .action-index { color: #9e745f; }
 
-.draft-panel { min-height: 0 !important; border: 1px solid #b9cbd1 !important; border-left: 4px solid #16324f !important; border-radius: 2px !important; background: #fffdf8 !important; box-shadow: none !important; }
-.draft-topline { padding: 12px 15px 10px !important; color: #31506d !important; border-bottom: 1px dotted #b9cbd1 !important; }
+.draft-panel { min-height: 0 !important; border: 1px solid #b9cbd1 !important; border-left: 4px solid var(--ink) !important; border-radius: 2px !important; background: var(--surface) !important; box-shadow: none !important; }
+.draft-topline { padding: 12px 15px 10px !important; color: var(--ink) !important; border-bottom: 1px dotted #b9cbd1 !important; }
 .draft-topline button { color: #8d681f !important; }
 .draft-card { position: relative; margin: 10px 12px 0 !important; border: 1px solid #d4e0e3 !important; border-radius: 1px !important; background: #f4f8f9 !important; }
 .draft-card:before { position: absolute; top: -8px; left: 10px; color: #416c85; font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: .08em; content: "DRAFT / 確認待ち"; }
 .draft-card-head { padding-top: 6px; }
 .draft-caption { margin: 8px 15px 11px !important; color: #748993 !important; }
-.draft-link { color: #16324f !important; text-decoration: underline; text-decoration-color: #bd8531; text-underline-offset: 4px; }
+.draft-link { color: var(--ink) !important; text-decoration: underline; text-decoration-color: var(--warn); text-underline-offset: 4px; }
 
 .pipeline-section { position: relative; padding-top: 3px; }
-.pipeline-section:before { position: absolute; top: 0; left: 0; width: 55px; border-top: 2px solid #bd8531; content: ""; }
-.pipeline-grid { border-bottom-color: #16324f; }
+.pipeline-section:before { position: absolute; top: 0; left: 0; width: 55px; border-top: 2px solid var(--warn); content: ""; }
+.pipeline-grid { border-bottom-color: var(--ink); }
 .pipeline-label i { border-top: 1px dotted #c6c5bc; background: none; }
 .deal-row { border-top-color: rgba(22,50,79,.13); }
 .deal-row:hover { background: #f7f6f0; }
@@ -47,8 +47,8 @@
 .table-panel, .account-list, .note-input, .brief-document { background-image: linear-gradient(to bottom, transparent 0 56px, rgba(22,50,79,.035) 56px 57px); background-size: 100% 57px; }
 .inbound-feature { border: 1px solid #d8d3c7; }
 .data-row:not(.data-head):hover, .account-line:hover { background-color: #f7f5ef; }
-.brief-document { border-top: 2px solid #16324f; }
-.brief-aside { border-left: 3px solid #bd8531; }
+.brief-document { border-top: 2px solid var(--ink); }
+.brief-aside { border-left: 3px solid var(--warn); }
 .knowledge-card { border-left: 3px solid #8199a7; }
 
 @media (max-width: 760px) {

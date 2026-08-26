@@ -132,7 +132,7 @@ export default function Home() {
     {searchOpen && <div className="conversion-sheet" style={{ position: "fixed", top: 72, left: "50%", transform: "translateX(-50%)", width: "min(90vw, 440px)", zIndex: 61, background: "#fff", boxShadow: "0 12px 32px rgba(0,0,0,0.18)" }}>
       <label className="worklist-search"><Search size={16} /><input autoFocus aria-label="取引先を検索" placeholder="取引先名で検索" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></label>
       <div style={{ marginTop: 8, maxHeight: 280, overflowY: "auto" }}>
-        {searchResults.map((c) => <button key={c.id} className="context-link" style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 4px" }} onClick={() => jumpToCompany(c.id)}>{c.name}<small style={{ marginLeft: 6, color: "#8a908a" }}>{c.category}</small></button>)}
+        {searchResults.map((c) => <button key={c.id} className="context-link" style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 4px" }} onClick={() => jumpToCompany(c.id)}>{c.name}<small style={{ marginLeft: 6, color: "var(--ink-muted)" }}>{c.category}</small></button>)}
         {searchQuery.trim() && searchResults.length === 0 && <p className="queue-empty">該当する取引先がありません。</p>}
       </div>
     </div>}

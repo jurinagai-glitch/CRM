@@ -62,10 +62,10 @@ function CompanyField({ text, linked, onChange }: { text: string; linked: boolea
       placeholder="取引先名（未登録の名前でも入力可・空欄可）"
       value={text}
       onChange={(e) => onChange(e.target.value, null)}
-      style={{ width: "100%", border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }}
+      style={{ width: "100%", border: "1px solid var(--rule)", borderRadius: 6, padding: 6, fontSize: 12 }}
     />
-    {results.length > 0 && <div style={{ marginTop: 4, border: "1px solid #dedbd2", borderRadius: 6, maxHeight: 140, overflowY: "auto" }}>
-      {results.map((c) => <button key={c.id} type="button" style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", fontSize: 12 }} onClick={() => { setResults([]); onChange(c.name, c.id); }}>{c.name}<small style={{ marginLeft: 6, color: "#8a908a" }}>{c.category}</small></button>)}
+    {results.length > 0 && <div style={{ marginTop: 4, border: "1px solid var(--rule)", borderRadius: 6, maxHeight: 140, overflowY: "auto" }}>
+      {results.map((c) => <button key={c.id} type="button" style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", fontSize: 12 }} onClick={() => { setResults([]); onChange(c.name, c.id); }}>{c.name}<small style={{ marginLeft: 6, color: "var(--ink-muted)" }}>{c.category}</small></button>)}
     </div>}
     {linked && <small style={{ color: "#4a7a5e" }}>登録済みの取引先に紐づけました</small>}
   </div>;

@@ -40,35 +40,35 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
   };
 
   if (status === "loading") {
-    return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f6f3ec", color: "#6a7372" }}>読み込み中...</div>;
+    return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--surface-subtle)", color: "var(--ink-muted)" }}>読み込み中...</div>;
   }
 
   if (status === "anon") {
     return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f6f3ec" }}>
-        <form onSubmit={submit} style={{ width: 320, padding: 32, background: "#fffdf8", border: "1px solid #dedbd2", borderRadius: 10, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--surface-subtle)" }}>
+        <form onSubmit={submit} style={{ width: 320, padding: 32, background: "#fffdf8", border: "1px solid var(--rule)", borderRadius: 10, display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, color: "#16324f", fontFamily: "'Noto Serif JP', serif" }}>Relay CRM</h1>
-            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#6a7372" }}>ログインしてください</p>
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--ink-muted)" }}>ログインしてください</p>
           </div>
-          <label style={{ fontSize: 12, color: "#52605f" }}>
+          <label style={{ fontSize: 12, color: "var(--ink-strong)" }}>
             メールアドレス
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px", border: "1px solid #dedbd2", borderRadius: 6, fontSize: 13 }}
+              style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: 6, fontSize: 13 }}
             />
           </label>
-          <label style={{ fontSize: 12, color: "#52605f" }}>
+          <label style={{ fontSize: 12, color: "var(--ink-strong)" }}>
             パスワード
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px", border: "1px solid #dedbd2", borderRadius: 6, fontSize: 13 }}
+              style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: 6, fontSize: 13 }}
             />
           </label>
           {error && <p style={{ margin: 0, fontSize: 12, color: "#b54b42" }}>{error}</p>}
