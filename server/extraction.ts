@@ -20,14 +20,29 @@ export type ExtractionResult = {
 };
 
 const HEARING_PATTERNS: Record<"issue" | "budget" | "decision_maker" | "timeline", RegExp> = {
-  issue: /^[・\s]*課題[:：](.+)$/,
-  budget: /^[・\s]*予算[:：](.+)$/,
-  decision_maker: /^[・\s]*決裁[:：](.+)$/,
-  timeline: /^[・\s]*時期[:：](.+)$/,
+  issue: /^[#・\s]*課題[:：](.+)$/,
+  budget: /^[#・\s]*予算[:：](.+)$/,
+  decision_maker: /^[#・\s]*決裁[:：](.+)$/,
+  timeline: /^[#・\s]*(?:時期|導入時期)[:：](.+)$/,
+};
+
+// A markdown-style header line naming a field with no value on the same line
+// (e.g. "### 課題" followed by the content on the next line(s)) — common in
+// notes exported from other note-taking tools.
+const HEARING_HEADER: Record<"issue" | "budget" | "decision_maker" | "timeline", RegExp> = {
+  issue: /^#{1,6}\s*課題\s*$/,
+  budget: /^#{1,6}\s*予算\s*$/,
+  decision_maker: /^#{1,6}\s*決裁(?:者)?\s*$/,
+  timeline: /^#{1,6}\s*(?:時期|導入時期)\s*$/,
 };
 
 const ACTION_PREFIX = /^[・\s]*[➡→]\s*(.+)$/;
+// Markdown checkbox list items ("- [ ] " / "-[x] " / "* [ ] "), open or checked.
+const CHECKBOX_ACTION_PREFIX = /^[-*]\s*\[[ xX]\]\s*(.+)$/;
 const DECISION_PREFIX = /^[・\s]*決定[:：](.+)$/;
+// A bare markdown header not naming a hearing field — used to detect the end
+// of a header-triggered field's content block.
+const ANY_HEADER = /^#{1,6}\s*(.+)$/;
 
 export function extractFromText(raw: string): ExtractionResult {
   const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -44,12 +59,23 @@ export function extractFromText(raw: string): ExtractionResult {
   };
 
   const bodyLines: string[] = [];
+  let pendingHeaderField: keyof typeof HEARING_HEADER | null = null;
+  let pendingHeaderContent: string[] = [];
+
+  const flushPendingHeader = () => {
+    if (pendingHeaderField && pendingHeaderContent.length) {
+      result[pendingHeaderField] = pendingHeaderContent.join(" ").trim();
+    }
+    pendingHeaderField = null;
+    pendingHeaderContent = [];
+  };
 
   for (const line of lines) {
     let matched = false;
     for (const [key, pattern] of Object.entries(HEARING_PATTERNS) as [keyof typeof HEARING_PATTERNS, RegExp][]) {
       const m = line.match(pattern);
       if (m) {
+        flushPendingHeader();
         result[key] = m[1].trim();
         matched = true;
         break;
@@ -57,20 +83,39 @@ export function extractFromText(raw: string): ExtractionResult {
     }
     if (matched) continue;
 
-    const actionMatch = line.match(ACTION_PREFIX);
+    const headerFieldMatch = (Object.entries(HEARING_HEADER) as [keyof typeof HEARING_HEADER, RegExp][]).find(([, pattern]) => pattern.test(line));
+    if (headerFieldMatch) {
+      flushPendingHeader();
+      pendingHeaderField = headerFieldMatch[0];
+      continue;
+    }
+
+    const actionMatch = line.match(ACTION_PREFIX) ?? line.match(CHECKBOX_ACTION_PREFIX);
     if (actionMatch) {
+      flushPendingHeader();
       result.actions.push({ description: actionMatch[1].trim() });
       continue;
     }
 
     const decisionMatch = line.match(DECISION_PREFIX);
     if (decisionMatch) {
+      flushPendingHeader();
       result.decisions.push(decisionMatch[1].trim());
       continue;
     }
 
+    if (pendingHeaderField) {
+      if (ANY_HEADER.test(line)) {
+        flushPendingHeader();
+      } else {
+        pendingHeaderContent.push(line);
+        continue;
+      }
+    }
+
     bodyLines.push(line);
   }
+  flushPendingHeader();
 
   // summary: first two body lines (that aren't hearing items/actions), truncated
   result.summary = bodyLines.slice(0, 2).join(" ").slice(0, 200) || "(内容の要約はまだ生成されていません)";
