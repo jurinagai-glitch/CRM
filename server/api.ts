@@ -428,6 +428,30 @@ api.get(
   })
 );
 
+// ボードから直接タスクを作成する（議事録経由でなくても、顧客に紐づくタスクを作れるようにする）
+api.post(
+  "/next-actions",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { company_id, description, assignee, due_date, priority } = req.body ?? {};
+    if (!company_id) return res.status(400).json({ error: "取引先を選択してください" });
+    if (!description || !description.trim()) return res.status(400).json({ error: "タスク内容を入力してください" });
+    if (priority && !ACTION_PRIORITIES.includes(priority)) {
+      return res.status(400).json({ error: `priorityは次のいずれかにしてください: ${ACTION_PRIORITIES.join(", ")}` });
+    }
+    const result = await pool.query(
+      `insert into next_actions (company_id, description, assignee, due_date, priority)
+       values ($1, $2, $3, $4, coalesce($5, '中')) returning *`,
+      [company_id, description.trim(), assignee || null, due_date || null, priority || null]
+    );
+    const withCompany = await pool.query(
+      "select a.*, c.name as company_name from next_actions a join companies c on c.id = a.company_id where a.id = $1",
+      [result.rows[0].id]
+    );
+    res.json({ action: withCompany.rows[0] });
+  })
+);
+
 api.patch(
   "/next-actions/:id",
   requireAuth,

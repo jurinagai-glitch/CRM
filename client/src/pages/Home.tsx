@@ -6,7 +6,6 @@ import Renewals from "@/components/Renewals";
 import AccountsWorkspace from "@/components/AccountsWorkspace";
 import MeetingWorkbench from "@/components/MeetingWorkbench";
 import InboundTriage from "@/components/InboundTriage";
-import ActionRunway from "@/components/ActionRunway";
 import AutomationHub from "@/components/AutomationHub";
 import MeetingBriefing from "@/components/MeetingBriefing";
 import KnowledgeBase from "@/components/KnowledgeBase";
@@ -32,6 +31,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 const Reports = lazy(() => import("@/components/Reports"));
+const ActionRunway = lazy(() => import("@/components/ActionRunway"));
 
 type Screen = "overview" | "inbounds" | "accounts" | "meetings" | "briefing" | "knowledge" | "actions" | "renewals" | "reports";
 type SearchCompany = { id: string; name: string; category: string };
@@ -108,7 +108,7 @@ export default function Home() {
     if (screen === "briefing") return <MeetingBriefing />;
     if (screen === "knowledge") return <KnowledgeBase />;
     if (screen === "renewals") return <Renewals />;
-    if (screen === "actions") return <ActionRunway onNavigate={selectScreen} />;
+    if (screen === "actions") return <Suspense fallback={<p className="queue-empty">読み込み中...</p>}><ActionRunway onNavigate={selectScreen} /></Suspense>;
     if (screen === "reports") return <Suspense fallback={<p className="queue-empty">読み込み中...</p>}><Reports /></Suspense>;
     return <AutomationHub onNavigate={selectScreen} />;
   };

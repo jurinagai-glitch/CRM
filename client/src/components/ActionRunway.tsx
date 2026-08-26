@@ -1,9 +1,10 @@
 /**
- * Quiet Operations Desk: the final MVP surface is a compact execution runway with clear time, owner, and completion evidence.
- * Wired to /api/next-actions.
+ * Trello-style task board: next actions linked to a customer, moved between
+ * columns by drag-and-drop. Wired to /api/next-actions.
  */
 import { Button } from "@/components/ui/button";
-import { Check, CheckCircle2, ChevronRight, CircleAlert, Clock3, EyeOff, ListChecks, RotateCcw } from "lucide-react";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
+import { Building2, Calendar, Plus, User, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
@@ -18,71 +19,168 @@ type ActionItem = {
   due_date: string | null;
   priority: "高" | "中" | "低";
   status: "open" | "done" | "dismissed";
-  dismiss_reason: string | null;
-  dismissed_by: string | null;
-  dismiss_snooze_until: string | null;
 };
 
-const DEFAULT_SNOOZE_DAYS = 7;
-const DEFAULT_DISMISS_REASON = "現在は対応不要のため見送り";
+type Company = { id: string; name: string; category: string };
 
-function Tag({ children, tone = "neutral" }: { children: string; tone?: "neutral" | "moss" | "ochre" | "navy" | "danger" }) { return <span className={`enterprise-status ${tone}`}>{children}</span>; }
+const COLUMNS: { id: ActionItem["status"]; label: string }[] = [
+  { id: "open", label: "未着手" },
+  { id: "done", label: "完了" },
+  { id: "dismissed", label: "アーカイブ" },
+];
+
+function isOverdue(item: ActionItem) {
+  return item.status === "open" && !!item.due_date && item.due_date < new Date().toISOString().slice(0, 10);
+}
+
+function PriorityTag({ priority }: { priority: ActionItem["priority"] }) {
+  const tone = priority === "高" ? "danger" : priority === "中" ? "ochre" : "neutral";
+  return <span className={`enterprise-status ${tone}`}>{priority}</span>;
+}
+
+function CompanyPicker({ onSelect }: { onSelect: (c: Company) => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Company[]>([]);
+  const [selected, setSelected] = useState<Company | null>(null);
+
+  useEffect(() => {
+    if (selected || !query.trim()) { setResults([]); return; }
+    const timeout = setTimeout(() => {
+      fetch(`/api/companies?q=${encodeURIComponent(query)}&limit=6`, { credentials: "include" })
+        .then((r) => r.json())
+        .then((data) => setResults(data.companies ?? []))
+        .catch(() => setResults([]));
+    }, 200);
+    return () => clearTimeout(timeout);
+  }, [query, selected]);
+
+  if (selected) {
+    return <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0" }}>
+      <b>{selected.name}</b>
+      <button className="context-link" onClick={() => { setSelected(null); setQuery(""); onSelect(null as unknown as Company); }}>変更</button>
+    </div>;
+  }
+
+  return <div>
+    <input placeholder="取引先を検索" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: "100%", border: "1px solid #dedbd2", borderRadius: 6, padding: 6, fontSize: 12 }} />
+    {results.length > 0 && <div style={{ marginTop: 4, border: "1px solid #dedbd2", borderRadius: 6, maxHeight: 140, overflowY: "auto" }}>
+      {results.map((c) => <button key={c.id} style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", fontSize: 12 }} onClick={() => { setSelected(c); setResults([]); onSelect(c); }}>{c.name}</button>)}
+    </div>}
+  </div>;
+}
 
 export default function ActionRunway({ onNavigate }: { onNavigate: (screen: ScreenTarget) => void }) {
-  const [openActions, setOpenActions] = useState<ActionItem[]>([]);
-  const [dismissedActions, setDismissedActions] = useState<ActionItem[]>([]);
+  const [columns, setColumns] = useState<Record<ActionItem["status"], ActionItem[]>>({ open: [], done: [], dismissed: [] });
   const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [newTask, setNewTask] = useState<{ company: Company | null; description: string; due_date: string; assignee: string; priority: ActionItem["priority"] }>({ company: null, description: "", due_date: "", assignee: "", priority: "中" });
 
   const load = () => {
-    Promise.all([
-      fetch("/api/next-actions?status=open", { credentials: "include" }).then((r) => r.json()),
-      fetch("/api/next-actions?status=dismissed", { credentials: "include" }).then((r) => r.json()),
-    ])
-      .then(([openData, dismissedData]) => {
-        setOpenActions(openData.actions ?? []);
-        setDismissedActions(dismissedData.actions ?? []);
+    Promise.all(COLUMNS.map((c) => fetch(`/api/next-actions?status=${c.id}`, { credentials: "include" }).then((r) => r.json())))
+      .then((results) => {
+        setColumns({
+          open: results[0].actions ?? [],
+          done: results[1].actions ?? [],
+          dismissed: results[2].actions ?? [],
+        });
         setLoading(false);
       })
-      .catch(() => toast.error("次アクションの取得に失敗しました"));
+      .catch(() => toast.error("タスクの取得に失敗しました"));
   };
 
   useEffect(load, []);
 
-  const patch = async (id: string, body: Record<string, unknown>) => {
-    const result = await apiRequest(`/api/next-actions/${id}`, {
+  const createTask = async () => {
+    if (!newTask.company) return toast.error("取引先を選択してください");
+    if (!newTask.description.trim()) return toast.error("タスク内容を入力してください");
+    const result = await apiRequest("/api/next-actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_id: newTask.company.id,
+        description: newTask.description,
+        due_date: newTask.due_date || null,
+        assignee: newTask.assignee || null,
+        priority: newTask.priority,
+      }),
+    });
+    if (!result) return;
+    setNewTask({ company: null, description: "", due_date: "", assignee: "", priority: "中" });
+    setShowForm(false);
+    load();
+    toast.success("タスクを追加しました");
+  };
+
+  const onDragEnd = async (result: DropResult) => {
+    const { source, destination, draggableId } = result;
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+    const fromStatus = source.droppableId as ActionItem["status"];
+    const toStatus = destination.droppableId as ActionItem["status"];
+    const moved = columns[fromStatus].find((a) => a.id === draggableId);
+    if (!moved) return;
+
+    // Optimistic move so the drag feels instant; reconciled by reload() on failure.
+    setColumns((prev) => {
+      const nextFrom = prev[fromStatus].filter((a) => a.id !== draggableId);
+      const nextTo = [...prev[toStatus]];
+      nextTo.splice(destination.index, 0, { ...moved, status: toStatus });
+      return { ...prev, [fromStatus]: nextFrom, [toStatus]: nextTo };
+    });
+
+    const ok = await apiRequest(`/api/next-actions/${draggableId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ status: toStatus }),
     });
-    if (!result) return false;
-    load();
-    return true;
+    if (!ok) load();
   };
 
-  const complete = async (id: string) => { if (await patch(id, { status: "done" })) toast.success("アクションを完了にしました。"); };
-  const dismiss = async (id: string) => {
-    const snoozeUntil = new Date(Date.now() + DEFAULT_SNOOZE_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    if (await patch(id, { status: "dismissed", dismiss_reason: DEFAULT_DISMISS_REASON, dismiss_snooze_until: snoozeUntil })) {
-      toast.info(`見送りにしました。${snoozeUntil}に再表示されます。`);
-    }
-  };
-  // Typing updates local state immediately for a responsive input; the PATCH
-  // only fires on blur, so a keystroke's PATCH response can never race ahead
-  // of a later keystroke and overwrite it (each field edit sends at most one
-  // request, once the user is done typing).
-  const editReasonLocally = (id: string, reason: string) => {
-    setDismissedActions((items) => items.map((a) => (a.id === id ? { ...a, dismiss_reason: reason } : a)));
-  };
-  const saveReason = (id: string, reason: string) => { patch(id, { dismiss_reason: reason }); };
-  const restore = async (id: string) => { if (await patch(id, { status: "open" })) toast.success("アクション一覧に戻しました。"); };
-
-  return <section className="screen-page enterprise-workspace action-workspace">
-    <header className="enterprise-page-head"><div><p className="eyebrow">NEXT ACTIONS · EXECUTION RUNWAY</p><h1>決めたことを、<br />期限の中で終える。</h1><p>商談を前へ進めるアクションだけを、期限・担当と一緒に実行します。</p></div></header>
-    <div className="workflow-ribbon"><span>01 問い合わせ</span><ChevronRight size={14} /><span>02 商談</span><ChevronRight size={14} /><span>03 議事録を確定</span><ChevronRight size={14} /><span className="active">04 次アクションを実行</span></div>
-    <div className="enterprise-shell action-shell">
-      <aside className="worklist-column action-filter-column"><div className="worklist-head"><div><span className="eyebrow">EXECUTION VIEW</span><h2>実行の優先順位</h2></div><ListChecks size={17} /></div></aside>
-      <main className="decision-column action-decision"><div className="action-board-head"><div><span className="eyebrow">TODAY'S EXECUTION</span><h2>次アクション</h2></div><span><Clock3 size={14} />{openActions.length}件 未完了</span></div><div className="action-table"><div className="action-table-head"><span>完了</span><span>取引先・アクション</span><span>担当</span><span>期限</span><span /></div>{loading && <p className="queue-empty">読み込み中...</p>}{openActions.map((item, index) => <article className="action-table-row" key={item.id}><button className="complete-box" onClick={() => complete(item.id)} aria-label={`${item.description}を完了`}><Check size={13} /></button><div className="action-summary"><span className="action-number">{String(index + 1).padStart(2, "0")}</span><div><b>{item.company_name}</b><p>{item.description}</p><Tag tone={item.priority === "高" ? "danger" : item.priority === "中" ? "ochre" : "neutral"}>{item.priority}</Tag></div></div><span className="action-owner">{item.assignee || "未割当"}</span><b>{item.due_date ?? "期限未設定"}</b><button className="row-dismiss" onClick={() => dismiss(item.id)} aria-label={`${item.description}を見送る`}><EyeOff size={13} /></button></article>)}</div>{!loading && openActions.length === 0 && <div className="action-complete-empty"><CheckCircle2 size={24} /><b>未完了の次アクションはありません。</b><p>議事録を確定すると、ここに次アクションが追加されます。</p><Button className="ink-button" onClick={() => onNavigate("meetings")}>議事録を整理する</Button></div>}{dismissedActions.length > 0 && <div className="action-dismissed"><span className="eyebrow">見送ったアクション</span>{dismissedActions.map((item) => <article className="action-dismissed-row" key={item.id}><div className="action-summary"><b>{item.company_name}</b><p>{item.description}</p></div><input className="dismiss-reason" value={item.dismiss_reason ?? ""} onChange={(e) => editReasonLocally(item.id, e.target.value)} onBlur={(e) => saveReason(item.id, e.target.value)} aria-label={`${item.description}の見送り理由`} /><span className="dismiss-meta">{item.dismissed_by}が見送り · {item.dismiss_snooze_until}に再表示</span><button className="row-dismiss" onClick={() => restore(item.id)} aria-label={`${item.description}を一覧に戻す`}><RotateCcw size={13} /></button></article>)}</div>}</main>
-      <aside className="context-column"><section className="context-card execution-card"><div className="context-heading"><div><span className="eyebrow">EXECUTION CHECK</span><h3>実行前の確認</h3></div><CircleAlert size={16} /></div><div className="execution-check"><span><Check />期限が設定されている</span><span><Check />担当者が決まっている</span><span><Check />商談または議事録に根拠がある</span></div><p>根拠のないタスクを増やさず、商談の次の判断へ結びつく作業だけを残します。</p></section></aside>
-    </div>
+  return <section className="screen-page kanban-page">
+    <header className="page-heading">
+      <div><p className="eyebrow">TASK BOARD</p><h1>期限のあるタスクを、<br />ボードで動かす。</h1><p>取引先に紐づくタスクをドラッグで進め、終わったものは「完了」へ、不要になったものは「アーカイブ」へ動かします。</p></div>
+      <Button className="ink-button" onClick={() => setShowForm((v) => !v)}><Plus size={16} />タスクを追加</Button>
+    </header>
+    {showForm && <section className="conversion-sheet" style={{ marginBottom: 16 }}>
+      <div className="conversion-grid">
+        <label>取引先<CompanyPicker onSelect={(c) => setNewTask({ ...newTask, company: c })} /></label>
+        <label>タスク内容<input value={newTask.description} onChange={(e) => setNewTask({ ...newTask, description: e.target.value })} /></label>
+        <label>期限<input type="date" value={newTask.due_date} onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })} /></label>
+        <label>担当<input value={newTask.assignee} onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })} /></label>
+        <label>優先度<select value={newTask.priority} onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as ActionItem["priority"] })}><option value="高">高</option><option value="中">中</option><option value="低">低</option></select></label>
+      </div>
+      <div className="conversion-footer"><span /><Button className="ink-button" onClick={createTask}>追加する</Button></div>
+    </section>}
+    {loading ? <p className="queue-empty">読み込み中...</p> : <DragDropContext onDragEnd={onDragEnd}>
+      <div className="kanban-board">
+        {COLUMNS.map((col) => <div className="kanban-column" key={col.id}>
+          <div className="kanban-column-head"><h3>{col.label}</h3><span>{columns[col.id].length}件</span></div>
+          <Droppable droppableId={col.id}>
+            {(provided) => <div className="kanban-column-body" ref={provided.innerRef} {...provided.droppableProps}>
+              {columns[col.id].map((item, index) => <Draggable draggableId={item.id} index={index} key={item.id}>
+                {(dragProvided) => <div
+                  className={`kanban-card ${isOverdue(item) ? "overdue" : ""}`}
+                  ref={dragProvided.innerRef}
+                  {...dragProvided.draggableProps}
+                  {...dragProvided.dragHandleProps}
+                >
+                  <div className="kanban-card-company"><Building2 size={13} />{item.company_name}</div>
+                  <p>{item.description}</p>
+                  <div className="kanban-card-meta">
+                    {item.due_date && <span><Calendar size={12} />{item.due_date}</span>}
+                    {item.assignee && <span><User size={12} />{item.assignee}</span>}
+                    <PriorityTag priority={item.priority} />
+                  </div>
+                </div>}
+              </Draggable>)}
+              {provided.placeholder}
+              {columns[col.id].length === 0 && <p className="kanban-column-empty">タスクはありません</p>}
+            </div>}
+          </Droppable>
+        </div>)}
+      </div>
+    </DragDropContext>}
+    {!loading && columns.open.length === 0 && columns.done.length === 0 && columns.dismissed.length === 0 && <div className="action-complete-empty"><X size={24} /><b>タスクはまだありません。</b><p>議事録を確定すると次アクションが自動で追加されるほか、ここから直接タスクを作成できます。</p><Button className="ink-button" onClick={() => onNavigate("meetings")}>議事録を整理する</Button></div>}
   </section>;
 }
