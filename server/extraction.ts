@@ -44,6 +44,22 @@ const DECISION_PREFIX = /^[・\s]*決定[:：](.+)$/;
 // of a header-triggered field's content block.
 const ANY_HEADER = /^#{1,6}\s*(.+)$/;
 
+/**
+ * Extract using the LLM when a key is configured, otherwise fall back to the
+ * rule-based path below. A failed LLM call also falls back rather than failing
+ * the request — a rule-based draft the user edits beats no draft at all.
+ */
+export async function extract(raw: string): Promise<ExtractionResult> {
+  const { isLlmExtractionAvailable, extractWithLlm } = await import("./extractionLlm");
+  if (!isLlmExtractionAvailable()) return extractFromText(raw);
+  try {
+    return await extractWithLlm(raw);
+  } catch (err) {
+    console.error("LLM extraction failed, falling back to rule-based:", err instanceof Error ? err.message : err);
+    return extractFromText(raw);
+  }
+}
+
 export function extractFromText(raw: string): ExtractionResult {
   const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 

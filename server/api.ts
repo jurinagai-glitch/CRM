@@ -13,7 +13,7 @@ import {
   type SessionUser,
 } from "./auth";
 import { pool } from "./db";
-import { extractFromText } from "./extraction";
+import { extract } from "./extraction";
 
 export const api = Router();
 
@@ -325,7 +325,7 @@ api.get(
     if (!summary.rows[0]) return res.status(404).json({ error: "下書きが見つかりません" });
     const note = await pool.query("select * from meeting_notes where id = $1", [summary.rows[0].meeting_note_id]);
     const company = await pool.query("select id, name, category from companies where id = $1", [note.rows[0]?.company_id]);
-    const extracted = extractFromText(note.rows[0]?.content ?? note.rows[0]?.raw_text ?? "");
+    const extracted = await extract(note.rows[0]?.content ?? note.rows[0]?.raw_text ?? "");
     res.json({ summary: summary.rows[0], meeting_note: note.rows[0], company: company.rows[0] ?? null, suggested_actions: extracted.actions });
   })
 );
@@ -347,7 +347,7 @@ api.post(
     );
     const note = noteResult.rows[0];
 
-    const extracted = extractFromText(content);
+    const extracted = await extract(content);
     const summaryResult = await pool.query(
       `insert into meeting_summaries (meeting_note_id, summary, decisions, issue, budget, decision_maker, timeline, unresolved, status)
        values ($1, $2, $3, $4, $5, $6, $7, $8, 'draft') returning *`,
