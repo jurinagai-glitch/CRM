@@ -3,7 +3,7 @@
  * Wired to real company/meeting/deal/contact data via /api/companies.
  */
 import { Button } from "@/components/ui/button";
-import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, CircleAlert, CopyPlus, ExternalLink, FileText, MoreHorizontal, Plus, Search, Sparkles, Trash2, UserRound } from "lucide-react";
+import { ArrowUpRight, Building2, CheckCircle2, ChevronRight, CircleAlert, CopyPlus, ExternalLink, FileText, MoreHorizontal, Pencil, Plus, Search, Sparkles, Trash2, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
@@ -70,6 +70,9 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
   const [showNewCompanyForm, setShowNewCompanyForm] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyCategory, setNewCompanyCategory] = useState(COMPANY_CATEGORIES[0]);
+  const [editingCompany, setEditingCompany] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editCategory, setEditCategory] = useState(COMPANY_CATEGORIES[0]);
 
   useEffect(() => {
     const jumpId = sessionStorage.getItem("relay:jumpToCompanyId");
@@ -161,6 +164,38 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
     toast.success("担当者を登録しました");
   };
 
+  const startEditCompany = () => {
+    if (!detail) return;
+    setEditName(detail.company.name);
+    setEditCategory(detail.company.category);
+    setEditingCompany(true);
+  };
+
+  const saveCompany = async () => {
+    if (!detail) return;
+    if (!editName.trim()) return toast.error("会社名を入力してください");
+    const result = await apiRequest(`/api/companies/${detail.company.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editName, category: editCategory }),
+    });
+    if (!result) return;
+    setEditingCompany(false);
+    reloadDetail();
+    loadCompanies();
+    toast.success("取引先を更新しました");
+  };
+
+  const updateDealStage = async (dealId: string, stage: string) => {
+    const result = await apiRequest(`/api/deals/${dealId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+    });
+    if (!result) return;
+    reloadDetail();
+  };
+
   const deleteCompany = async () => {
     if (!detail) return;
     if (!window.confirm(`「${detail.company.name}」を削除します。よろしいですか？（商談・議事録等の記録がある場合は削除できません）`)) return;
@@ -217,13 +252,13 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
       <aside className="worklist-column"><div className="worklist-head"><div><span className="eyebrow">WORKLIST</span><h2>取引先 <b>{companies.length}</b></h2></div><button onClick={() => toast.info("表示列の設定は今後の機能です")} aria-label="取引先一覧の設定"><MoreHorizontal size={18} /></button></div><label className="worklist-search"><Search size={15} /><input aria-label="取引先を検索" placeholder="会社名で検索" value={query} onChange={(e) => setQuery(e.target.value)} /></label><div className="account-rows">{loading ? <p className="queue-empty">読み込み中...</p> : companies.map((item, index) => <button className={`account-row ${selectedId === item.id ? "selected" : ""}`} key={item.id} onClick={() => setSelectedId(item.id)}><span className="account-row-number">{String(index + 1).padStart(2, "0")}</span><span className="account-row-main"><b>{item.name}</b><small>商談 {item.meeting_count}件</small></span><span className="account-row-meta"><Status tone={categoryTone(item.category)}>{item.category}</Status></span><ChevronRight size={15} /></button>)}{!loading && companies.length === 0 && <p className="queue-empty">該当する取引先がありません。</p>}</div><button className="worklist-add" onClick={() => setShowNewCompanyForm((v) => !v)}><CopyPlus size={15} />取引先を追加</button></aside>
 
       {detail ? <>
-      <main className="decision-column"><div className="entity-banner"><div className="entity-mark"><Building2 size={18} /></div><div className="entity-title"><div className="entity-overline"><Status tone={categoryTone(detail.company.category)}>{detail.company.category}</Status><span>商談 {detail.company.meeting_count}件</span></div><h2>{detail.company.name}</h2>{detail.company.name_variants.length > 0 && <p>旧表記: {detail.company.name_variants.join(" / ")}</p>}</div><button className="entity-more" onClick={deleteCompany} aria-label="取引先を削除"><Trash2 size={19} /></button></div>
+      <main className="decision-column"><div className="entity-banner"><div className="entity-mark"><Building2 size={18} /></div><div className="entity-title"><div className="entity-overline"><Status tone={categoryTone(detail.company.category)}>{detail.company.category}</Status><span>商談 {detail.company.meeting_count}件</span></div>{editingCompany ? <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}><input value={editName} onChange={(e) => setEditName(e.target.value)} style={{ flex: 1, border: "1px solid var(--rule)", borderRadius: 6, padding: 6, fontSize: 14 }} /><select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} style={{ border: "1px solid var(--rule)", borderRadius: 6, fontSize: 12 }}>{COMPANY_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</select><button className="context-link" onClick={saveCompany}>保存</button><button className="context-link" onClick={() => setEditingCompany(false)}>取消</button></div> : <h2>{detail.company.name}</h2>}{detail.company.name_variants.length > 0 && <p>旧表記: {detail.company.name_variants.join(" / ")}</p>}</div><button className="entity-more" onClick={startEditCompany} aria-label="取引先を編集"><Pencil size={17} /></button><button className="entity-more" onClick={deleteCompany} aria-label="取引先を削除"><Trash2 size={19} /></button></div>
 
         {latestMeeting ? <section className="current-decision"><div className="decision-label"><span className="eyebrow">LATEST MEETING</span><Status tone="navy">{latestMeeting.meeting_date ?? "日付不明"}</Status></div><h3>{latestMeeting.contact ? `${latestMeeting.contact}との商談` : "直近の商談記録"}</h3><p>{latestMeeting.content ? latestMeeting.content.slice(0, 140) : "本文の記録はありません。"}</p><div className="decision-actions"><Button className="ink-button" onClick={() => onNavigate("meetings")}><FileText size={16} />新しい議事録を貼り付ける</Button></div></section> : <section className="current-decision"><h3>まだ商談記録がありません</h3><p>議事録を貼り付けると、ここに最新の商談が表示されます。</p></section>}
 
         <section className="account-facts"><div><span>区分</span><b>{detail.company.category}</b><small>&nbsp;</small></div><div><span>商談件数</span><b>{detail.company.meeting_count}件</b><small>&nbsp;</small></div><div><span>最終商談</span><b>{latestMeeting?.meeting_date ?? "―"}</b><small>{latestMeeting?.format ?? ""}</small></div><div><span>登録済み旧表記</span><b>{detail.company.name_variants.length}件</b><small>&nbsp;</small></div></section>
 
-        <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">DEALS</span><h3>商談</h3></div><span>{detail.deals.length}件</span></div><div className="activity-ledger">{detail.deals.length === 0 && <p className="queue-empty">商談はまだ登録されていません。</p>}{detail.deals.map((d) => <article key={d.id}><span className="activity-index" /><div><b>{d.name}</b><p>{d.amount ? `¥${Number(d.amount).toLocaleString()}` : "金額未設定"}</p></div><Status tone={d.stage === "成約" ? "moss" : d.stage === "失注" ? "danger" : "navy"}>{d.stage}</Status></article>)}<div style={{ display: "flex", gap: 6, padding: "10px 0" }}><input placeholder="商談名" value={newDealName} onChange={(e) => setNewDealName(e.target.value)} style={{ flex: 1, border: "1px solid var(--rule)", borderRadius: 6, padding: 6, fontSize: 12 }} /><select value={newDealStage} onChange={(e) => setNewDealStage(e.target.value)} style={{ border: "1px solid var(--rule)", borderRadius: 6, fontSize: 12 }}>{DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select><button className="context-link" onClick={addDeal}>追加</button></div></div></section>
+        <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">DEALS</span><h3>商談</h3></div><span>{detail.deals.length}件</span></div><div className="activity-ledger">{detail.deals.length === 0 && <p className="queue-empty">商談はまだ登録されていません。</p>}{detail.deals.map((d) => <article key={d.id}><span className="activity-index" /><div><b>{d.name}</b><p>{d.amount ? `¥${Number(d.amount).toLocaleString()}` : "金額未設定"}</p></div><select value={d.stage} onChange={(e) => updateDealStage(d.id, e.target.value)} aria-label="商談ステージを変更" style={{ border: "1px solid var(--rule)", borderRadius: 6, fontSize: 11, padding: "2px 4px" }}>{DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select></article>)}<div style={{ display: "flex", gap: 6, padding: "10px 0" }}><input placeholder="商談名" value={newDealName} onChange={(e) => setNewDealName(e.target.value)} style={{ flex: 1, border: "1px solid var(--rule)", borderRadius: 6, padding: 6, fontSize: 12 }} /><select value={newDealStage} onChange={(e) => setNewDealStage(e.target.value)} style={{ border: "1px solid var(--rule)", borderRadius: 6, fontSize: 12 }}>{DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select><button className="context-link" onClick={addDeal}>追加</button></div></div></section>
 
         <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">TASKS</span><h3>タスク</h3></div><span>{detail.actions.length}件</span></div><div className="activity-ledger">{detail.actions.length === 0 && <p className="queue-empty">この取引先に紐づくタスクはありません。</p>}{detail.actions.map((a) => <article key={a.id}><span className="activity-index" /><div><b>{a.description}</b><p>{a.due_date ? `期限: ${a.due_date}` : "期限未設定"}{a.assignee ? `　・　担当: ${a.assignee}` : ""}</p></div><Status tone={a.status === "done" ? "moss" : a.status === "dismissed" ? "neutral" : a.priority === "高" ? "danger" : "ochre"}>{a.status === "done" ? "完了" : a.status === "dismissed" ? "アーカイブ" : a.priority}</Status></article>)}{detail.actions.length > 0 && <button className="context-link" onClick={() => onNavigate("actions")} style={{ marginTop: 4 }}>タスクボードを開く <ArrowUpRight size={13} /></button>}</div></section>
 

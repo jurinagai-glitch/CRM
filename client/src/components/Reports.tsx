@@ -44,7 +44,7 @@ export default function Reports() {
             <XAxis dataKey="stage" fontSize={12} />
             <YAxis allowDecimals={false} fontSize={12} />
             <Tooltip formatter={(value: number, name: string) => [value, name === "count" ? "件数" : name]} />
-            <Bar dataKey="count" fill="#8a7358" name="件数" />
+            <Bar dataKey="count" fill="#264af4" name="件数" />
           </BarChart>
         </ResponsiveContainer>
       </Card>
@@ -56,7 +56,7 @@ export default function Reports() {
             <XAxis dataKey="month" fontSize={12} />
             <YAxis allowDecimals={false} fontSize={12} />
             <Tooltip />
-            <Bar dataKey="count" fill="#4b5f52" name="件数" />
+            <Bar dataKey="count" fill="#259d63" name="件数" />
           </BarChart>
         </ResponsiveContainer>
       </Card>

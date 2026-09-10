@@ -46,9 +46,9 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
   if (status === "anon") {
     return (
       <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--surface-subtle)" }}>
-        <form onSubmit={submit} style={{ width: 320, padding: 32, background: "#fffdf8", border: "1px solid var(--rule)", borderRadius: 10, display: "flex", flexDirection: "column", gap: 14 }}>
+        <form onSubmit={submit} style={{ width: 320, padding: 32, background: "var(--surface)", border: "1px solid var(--rule)", borderRadius: 10, display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 20, color: "#16324f", fontFamily: "'Noto Serif JP', serif" }}>Relay CRM</h1>
+            <h1 style={{ margin: 0, fontSize: 20, color: "var(--ink)", fontFamily: "var(--font-family-sans)" }}>Relay CRM</h1>
             <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--ink-muted)" }}>ログインしてください</p>
           </div>
           <label style={{ fontSize: 12, color: "var(--ink-strong)" }}>
@@ -71,7 +71,7 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
               style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px", border: "1px solid var(--rule)", borderRadius: 6, fontSize: 13 }}
             />
           </label>
-          {error && <p style={{ margin: 0, fontSize: 12, color: "#b54b42" }}>{error}</p>}
+          {error && <p style={{ margin: 0, fontSize: 12, color: "var(--danger)" }}>{error}</p>}
           <Button type="submit" className="ink-button" disabled={submitting}>
             {submitting ? "ログイン中..." : "ログイン"}
           </Button>

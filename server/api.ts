@@ -129,6 +129,29 @@ api.post(
   })
 );
 
+// 取引先の名前・区分を修正する（誤字の修正や区分の見直しのため）。
+api.patch(
+  "/companies/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { name, category } = req.body ?? {};
+    if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: "会社名は空にできません" });
+    if (category && !COMPANY_CATEGORIES.includes(category)) {
+      return res.status(400).json({ error: `categoryは次のいずれかにしてください: ${COMPANY_CATEGORIES.join(", ")}` });
+    }
+    if (name) {
+      const dup = await pool.query("select id from companies where lower(name) = lower($1) and id != $2", [String(name).trim(), req.params.id]);
+      if (dup.rows[0]) return res.status(409).json({ error: "同じ名前の取引先が既に登録されています" });
+    }
+    const result = await pool.query(
+      `update companies set name = coalesce($1, name), category = coalesce($2, category) where id = $3 returning *`,
+      [name ? String(name).trim() : null, category ?? null, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "取引先が見つかりません" });
+    res.json({ company: result.rows[0] });
+  })
+);
+
 // 誤って作成した取引先だけを削除できるようにする。商談・議事録などの実データが
 // 1件でも紐づいていれば拒否し、履歴の消失を防ぐ（アーカイブ機能は別途検討）。
 api.delete(
