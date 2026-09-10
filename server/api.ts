@@ -538,9 +538,10 @@ const INBOUND_STATUSES = ["未対応", "対応中", "取引先化済み", "対�
 const INQUIRY_PRODUCTS = ["スポット", "スポット＋", "タブレット", "マンション", "ビューン@", "その他"];
 const INQUIRY_CATEGORIES = ["店舗", "共同事業者", "その他"];
 const INQUIRY_ACTIONS = ["直販", "紹介"];
+const INQUIRY_BUSINESS_TYPES = ["ホテル", "病院・クリニック", "カーディーラー", "美容室", "福利厚生", "管理会社", "パチンコ", "その他"];
 
 api.get("/inbound-inquiries/options", requireAuth, (_req, res) => {
-  res.json({ products: INQUIRY_PRODUCTS, categories: INQUIRY_CATEGORIES, actions: INQUIRY_ACTIONS });
+  res.json({ products: INQUIRY_PRODUCTS, categories: INQUIRY_CATEGORIES, actions: INQUIRY_ACTIONS, business_types: INQUIRY_BUSINESS_TYPES });
 });
 
 // Partners already referred to, so the referral field can suggest existing
@@ -572,10 +573,13 @@ api.get(
 
     const params: unknown[] = [];
     const conditions: string[] = [];
+    // The 2,602 imported rows are an archive; the triage queue must not open
+    // with years-old inquiries in it. They are only returned when asked for.
+    conditions.push(req.query.historical === "true" ? "is_historical = true" : "is_historical = false");
     if (status) {
       params.push(status);
       conditions.push(`status = $${params.length}`);
-    } else {
+    } else if (req.query.historical !== "true") {
       conditions.push(`status != '対象外'`);
     }
     if (q) {
@@ -598,21 +602,23 @@ api.post(
   "/inbound-inquiries",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { source, company_name, contact_name, content, inquiry_date, store_name, business_type, product, category, action, referred_partner } = req.body ?? {};
+    const { source, company_name, contact_name, content, inquiry_date, store_name, business_type, products, category, action, referred_partner } = req.body ?? {};
     if (!company_name) return res.status(400).json({ error: "会社名は必須です" });
-    if (product && !INQUIRY_PRODUCTS.includes(product)) return res.status(400).json({ error: `問い合わせ商材は次のいずれかにしてください: ${INQUIRY_PRODUCTS.join(", ")}` });
+    const productList: string[] = Array.isArray(products) ? products.filter((p): p is string => typeof p === "string" && p.trim() !== "") : [];
+    const badProduct = productList.find((p) => !INQUIRY_PRODUCTS.includes(p));
+    if (badProduct) return res.status(400).json({ error: `問い合わせ商材は次のいずれかにしてください: ${INQUIRY_PRODUCTS.join(", ")}` });
     if (category && !INQUIRY_CATEGORIES.includes(category)) return res.status(400).json({ error: `区分は次のいずれかにしてください: ${INQUIRY_CATEGORIES.join(", ")}` });
     if (action && !INQUIRY_ACTIONS.includes(action)) return res.status(400).json({ error: `アクションは次のいずれかにしてください: ${INQUIRY_ACTIONS.join(", ")}` });
     if (action === "紹介" && !referred_partner?.trim()) return res.status(400).json({ error: "紹介の場合は紹介先の共同事業者を入力してください" });
 
     const result = await pool.query(
       `insert into inbound_inquiries
-         (source, company_name, contact_name, content, inquiry_date, store_name, business_type, product, category, action, referred_partner)
+         (source, company_name, contact_name, content, inquiry_date, store_name, business_type, products, category, action, referred_partner)
        values ($1, $2, $3, $4, coalesce($5, (now() at time zone 'Asia/Tokyo')::date), $6, $7, $8, $9, $10, $11) returning *`,
       [
         source || null, company_name, contact_name || null, content || null,
         inquiry_date || null, store_name || null, business_type || null,
-        product || null, category || null, action || null,
+        productList, category || null, action || null,
         // A referral partner only means something when the action is 紹介.
         action === "紹介" ? referred_partner.trim() : null,
       ]
@@ -625,22 +631,24 @@ api.patch(
   "/inbound-inquiries/:id",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { status, exclusion_reason, inquiry_date, store_name, business_type, product, category, action, referred_partner } = req.body ?? {};
+    const { status, exclusion_reason, inquiry_date, store_name, business_type, products, category, action, referred_partner } = req.body ?? {};
     if (status && !INBOUND_STATUSES.includes(status)) return res.status(400).json({ error: `statusは次のいずれかにしてください: ${INBOUND_STATUSES.join(", ")}` });
-    if (product && !INQUIRY_PRODUCTS.includes(product)) return res.status(400).json({ error: `問い合わせ商材は次のいずれかにしてください: ${INQUIRY_PRODUCTS.join(", ")}` });
+    const patchProducts: string[] | null = Array.isArray(products) ? products.filter((p): p is string => typeof p === "string" && p.trim() !== "") : null;
+    const badPatchProduct = patchProducts?.find((p) => !INQUIRY_PRODUCTS.includes(p));
+    if (badPatchProduct) return res.status(400).json({ error: `問い合わせ商材は次のいずれかにしてください: ${INQUIRY_PRODUCTS.join(", ")}` });
     if (category && !INQUIRY_CATEGORIES.includes(category)) return res.status(400).json({ error: `区分は次のいずれかにしてください: ${INQUIRY_CATEGORIES.join(", ")}` });
     if (action && !INQUIRY_ACTIONS.includes(action)) return res.status(400).json({ error: `アクションは次のいずれかにしてください: ${INQUIRY_ACTIONS.join(", ")}` });
     const result = await pool.query(
       `update inbound_inquiries set
          status = coalesce($1, status), exclusion_reason = coalesce($2, exclusion_reason),
          inquiry_date = coalesce($3, inquiry_date), store_name = coalesce($4, store_name),
-         business_type = coalesce($5, business_type), product = coalesce($6, product),
+         business_type = coalesce($5, business_type), products = coalesce($6, products),
          category = coalesce($7, category), action = coalesce($8, action),
          referred_partner = coalesce($9, referred_partner)
        where id = $10 returning *`,
       [
         status ?? null, exclusion_reason ?? null, inquiry_date ?? null, store_name ?? null,
-        business_type ?? null, product ?? null, category ?? null, action ?? null,
+        business_type ?? null, patchProducts, category ?? null, action ?? null,
         referred_partner ?? null, req.params.id,
       ]
     );

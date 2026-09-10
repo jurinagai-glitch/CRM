@@ -67,4 +67,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .meeting-hearing { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; margin: 8px 0 4px; }
 .meeting-hearing span { padding: 6px 8px; border-radius: var(--border-radius-4); background: var(--accent-bg); color: var(--ink-strong); font-size: 10px; line-height: 1.5; }
 .meeting-hearing em { display: block; margin-bottom: 2px; color: var(--ink-muted); font-size: 9px; font-style: normal; font-weight: 700; }
+/* Multi-select picklist rendered as chips (問い合わせ商材). */
+.checkbox-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.checkbox-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border: 1px solid var(--rule); border-radius: var(--border-radius-full); background: var(--surface); color: var(--ink-strong); font-size: 11px; cursor: pointer; }
+.checkbox-chip:has(input:checked) { border-color: var(--ink); background: var(--accent-bg); color: var(--ink); font-weight: 700; }
+.checkbox-chip input { margin: 0; accent-color: var(--ink); }
 @media (max-width: 900px) { .kanban-board { grid-template-columns: 1fr; } }
