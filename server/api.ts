@@ -532,19 +532,65 @@ api.patch(
 );
 
 const INBOUND_STATUSES = ["未対応", "対応中", "取引先化済み", "対象外"];
+// Picklists for newly entered inquiries. Historical rows imported from the
+// spreadsheet may hold other spellings (see migration 009) — these constrain
+// what the app writes, not what the table can contain.
+const INQUIRY_PRODUCTS = ["スポット", "スポット＋", "タブレット", "マンション", "ビューン@", "その他"];
+const INQUIRY_CATEGORIES = ["店舗", "共同事業者", "その他"];
+const INQUIRY_ACTIONS = ["直販", "紹介"];
+
+api.get("/inbound-inquiries/options", requireAuth, (_req, res) => {
+  res.json({ products: INQUIRY_PRODUCTS, categories: INQUIRY_CATEGORIES, actions: INQUIRY_ACTIONS });
+});
+
+// Partners already referred to, so the referral field can suggest existing
+// spellings instead of accumulating new variants of the same company.
+api.get(
+  "/inbound-inquiries/partners",
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    const result = await pool.query(
+      `select referred_partner as name, count(*)::int as count
+       from inbound_inquiries
+       where referred_partner is not null and btrim(referred_partner) not in ('', '-')
+       group by referred_partner order by count desc, name asc limit 50`
+    );
+    res.json({ partners: result.rows.map((r) => r.name) });
+  })
+);
 
 api.get(
   "/inbound-inquiries",
   requireAuth,
   asyncHandler(async (req, res) => {
     const status = typeof req.query.status === "string" && INBOUND_STATUSES.includes(req.query.status) ? req.query.status : null;
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    // 2,600+ historical rows make an unbounded list unusable; default to the
+    // most recent page and let the caller search or ask for more.
+    const limit = Math.min(Number(req.query.limit) || 200, 1000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+    if (status) {
+      params.push(status);
+      conditions.push(`status = $${params.length}`);
+    } else {
+      conditions.push(`status != '対象外'`);
+    }
+    if (q) {
+      params.push(`%${q}%`);
+      conditions.push(`(company_name ilike $${params.length} or store_name ilike $${params.length} or business_type ilike $${params.length} or referred_partner ilike $${params.length})`);
+    }
+    const where = `where ${conditions.join(" and ")}`;
+    const countResult = await pool.query(`select count(*) from inbound_inquiries ${where}`, params);
     const result = await pool.query(
-      status
-        ? "select * from inbound_inquiries where status = $1 order by created_at desc"
-        : "select * from inbound_inquiries where status != '対象外' order by created_at desc",
-      status ? [status] : []
+      `select * from inbound_inquiries ${where}
+       order by inquiry_date desc nulls last, created_at desc
+       limit $${params.length + 1} offset $${params.length + 2}`,
+      [...params, limit, offset]
     );
-    res.json({ inquiries: result.rows });
+    res.json({ inquiries: result.rows, total: Number(countResult.rows[0].count) });
   })
 );
 
@@ -552,12 +598,24 @@ api.post(
   "/inbound-inquiries",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { source, company_name, contact_name, content } = req.body ?? {};
+    const { source, company_name, contact_name, content, inquiry_date, store_name, business_type, product, category, action, referred_partner } = req.body ?? {};
     if (!company_name) return res.status(400).json({ error: "会社名は必須です" });
+    if (product && !INQUIRY_PRODUCTS.includes(product)) return res.status(400).json({ error: `問い合わせ商材は次のいずれかにしてください: ${INQUIRY_PRODUCTS.join(", ")}` });
+    if (category && !INQUIRY_CATEGORIES.includes(category)) return res.status(400).json({ error: `区分は次のいずれかにしてください: ${INQUIRY_CATEGORIES.join(", ")}` });
+    if (action && !INQUIRY_ACTIONS.includes(action)) return res.status(400).json({ error: `アクションは次のいずれかにしてください: ${INQUIRY_ACTIONS.join(", ")}` });
+    if (action === "紹介" && !referred_partner?.trim()) return res.status(400).json({ error: "紹介の場合は紹介先の共同事業者を入力してください" });
+
     const result = await pool.query(
-      `insert into inbound_inquiries (source, company_name, contact_name, content)
-       values ($1, $2, $3, $4) returning *`,
-      [source || null, company_name, contact_name || null, content || null]
+      `insert into inbound_inquiries
+         (source, company_name, contact_name, content, inquiry_date, store_name, business_type, product, category, action, referred_partner)
+       values ($1, $2, $3, $4, coalesce($5, (now() at time zone 'Asia/Tokyo')::date), $6, $7, $8, $9, $10, $11) returning *`,
+      [
+        source || null, company_name, contact_name || null, content || null,
+        inquiry_date || null, store_name || null, business_type || null,
+        product || null, category || null, action || null,
+        // A referral partner only means something when the action is 紹介.
+        action === "紹介" ? referred_partner.trim() : null,
+      ]
     );
     res.json({ inquiry: result.rows[0] });
   })
@@ -567,12 +625,24 @@ api.patch(
   "/inbound-inquiries/:id",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { status, exclusion_reason } = req.body ?? {};
+    const { status, exclusion_reason, inquiry_date, store_name, business_type, product, category, action, referred_partner } = req.body ?? {};
     if (status && !INBOUND_STATUSES.includes(status)) return res.status(400).json({ error: `statusは次のいずれかにしてください: ${INBOUND_STATUSES.join(", ")}` });
+    if (product && !INQUIRY_PRODUCTS.includes(product)) return res.status(400).json({ error: `問い合わせ商材は次のいずれかにしてください: ${INQUIRY_PRODUCTS.join(", ")}` });
+    if (category && !INQUIRY_CATEGORIES.includes(category)) return res.status(400).json({ error: `区分は次のいずれかにしてください: ${INQUIRY_CATEGORIES.join(", ")}` });
+    if (action && !INQUIRY_ACTIONS.includes(action)) return res.status(400).json({ error: `アクションは次のいずれかにしてください: ${INQUIRY_ACTIONS.join(", ")}` });
     const result = await pool.query(
-      `update inbound_inquiries set status = coalesce($1, status), exclusion_reason = coalesce($2, exclusion_reason)
-       where id = $3 returning *`,
-      [status ?? null, exclusion_reason ?? null, req.params.id]
+      `update inbound_inquiries set
+         status = coalesce($1, status), exclusion_reason = coalesce($2, exclusion_reason),
+         inquiry_date = coalesce($3, inquiry_date), store_name = coalesce($4, store_name),
+         business_type = coalesce($5, business_type), product = coalesce($6, product),
+         category = coalesce($7, category), action = coalesce($8, action),
+         referred_partner = coalesce($9, referred_partner)
+       where id = $10 returning *`,
+      [
+        status ?? null, exclusion_reason ?? null, inquiry_date ?? null, store_name ?? null,
+        business_type ?? null, product ?? null, category ?? null, action ?? null,
+        referred_partner ?? null, req.params.id,
+      ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: "問い合わせが見つかりません" });
     res.json({ inquiry: result.rows[0] });
