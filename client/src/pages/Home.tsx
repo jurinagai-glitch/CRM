@@ -16,6 +16,7 @@ import {
   ChevronRight,
   FileText,
   Inbox,
+  KeyRound,
   LayoutDashboard,
   ListTodo,
   LogOut,
@@ -26,6 +27,9 @@ import {
   X,
 } from "lucide-react";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { apiRequest } from "@/lib/api";
 
 const Reports = lazy(() => import("@/components/Reports"));
 const ActionRunway = lazy(() => import("@/components/ActionRunway"));
@@ -61,6 +65,26 @@ export default function Home() {
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     window.location.reload();
+  };
+
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNext, setPwNext] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+
+  const changePassword = async () => {
+    setPwBusy(true);
+    const result = await apiRequest("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: pwCurrent, new_password: pwNext }),
+    });
+    setPwBusy(false);
+    if (!result) return;
+    setPwOpen(false);
+    setPwCurrent("");
+    setPwNext("");
+    toast.success("パスワードを変更しました");
   };
   const activeName = useMemo(() => ({ overview: "自動化", inbounds: "問い合わせ", accounts: "顧客", meetings: "議事録", briefing: "準備", knowledge: "ナレッジ", actions: "実行", renewals: "契約・更新", reports: "レポート" }[screen]), [screen]);
 
@@ -135,7 +159,10 @@ export default function Home() {
           {secondaryNavItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={screen === item.id ? "active" : ""} onClick={() => selectScreen(item.id)}><Icon size={18} /><span>{item.label}</span>{!!item.count && <b>{item.count}</b>}</button>; })}
         </details>
       </nav>
-      <div className="sidebar-bottom"><button className="profile" onClick={logout} title="ログアウト"><MiniAvatar tone="navy">{(currentUser?.name ?? currentUser?.email ?? "?").slice(0, 1)}</MiniAvatar><span><b>{currentUser?.name ?? currentUser?.email ?? "読み込み中"}</b><small>{currentUser?.email ?? ""}</small></span><LogOut size={16} /></button></div>
+      <div className="sidebar-bottom">
+        <button onClick={() => setPwOpen(true)}><KeyRound size={16} />パスワード変更</button>
+        <button className="profile" onClick={logout} title="ログアウト"><MiniAvatar tone="navy">{(currentUser?.name ?? currentUser?.email ?? "?").slice(0, 1)}</MiniAvatar><span><b>{currentUser?.name ?? currentUser?.email ?? "読み込み中"}</b><small>{currentUser?.email ?? ""}</small></span><LogOut size={16} /></button>
+      </div>
     </aside>
     {sidebarOpen && <button aria-label="ナビゲーションを閉じる" className="mobile-overlay" onClick={() => setSidebarOpen(false)} />}
     <main className="main-area"><header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="ナビゲーションを開く"><Menu size={21} /></button><div className="breadcrumb"><span>ワークスペース</span><ChevronRight size={14} /><b>{activeName}</b></div><div className="top-actions"><button className="command-search" onClick={() => setSearchOpen(true)}><Search size={17} /><span>検索</span><kbd>⌘ K</kbd></button><button className="add-button" onClick={() => selectScreen("meetings")}><Plus size={17} /><span>議事録を処理</span></button></div></header><div className="workspace">{renderScreen()}</div></main>
@@ -146,6 +173,15 @@ export default function Home() {
         {searchResults.map((c) => <button key={c.id} className="context-link" style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 4px" }} onClick={() => jumpToCompany(c.id)}>{c.name}<small style={{ marginLeft: 6, color: "var(--ink-muted)" }}>{c.category}</small></button>)}
         {searchQuery.trim() && searchResults.length === 0 && <p className="queue-empty">該当する取引先がありません。</p>}
       </div>
+    </div>}
+    {pwOpen && <button aria-label="閉じる" className="mobile-overlay" style={{ zIndex: 60 }} onClick={() => setPwOpen(false)} />}
+    {pwOpen && <div className="conversion-sheet" style={{ position: "fixed", top: 100, left: "50%", transform: "translateX(-50%)", width: "min(90vw, 380px)", zIndex: 61, background: "var(--surface)", boxShadow: "var(--elevation-3)" }}>
+      <h3 style={{ margin: "0 0 10px", fontSize: 14, color: "var(--ink-strong)" }}>パスワード変更</h3>
+      <div className="conversion-grid" style={{ gridTemplateColumns: "1fr" }}>
+        <label>現在のパスワード<input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} /></label>
+        <label>新しいパスワード（10文字以上）<input type="password" value={pwNext} onChange={(e) => setPwNext(e.target.value)} /></label>
+      </div>
+      <div className="conversion-footer"><span /><Button className="ink-button" onClick={changePassword} disabled={pwBusy}>{pwBusy ? "変更中..." : "変更する"}</Button></div>
     </div>}
   </div>;
 }

@@ -70,6 +70,8 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
   const [showNewCompanyForm, setShowNewCompanyForm] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyCategory, setNewCompanyCategory] = useState(COMPANY_CATEGORIES[0]);
+  const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null);
+  const [showAllMeetings, setShowAllMeetings] = useState(false);
   const [editingCompany, setEditingCompany] = useState(false);
   const [editName, setEditName] = useState("");
   const [editCategory, setEditCategory] = useState(COMPANY_CATEGORIES[0]);
@@ -130,6 +132,13 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reloadDetail, [selectedId]);
+
+  // Collapse any expanded meeting when switching to another company.
+  useEffect(() => {
+    setExpandedMeetingId(null);
+    setShowAllMeetings(false);
+    setEditingCompany(false);
+  }, [selectedId]);
 
   const latestMeeting = useMemo(() => detail?.meetings?.[0] ?? null, [detail]);
   const latestApprovedSummary = useMemo(
@@ -264,7 +273,29 @@ export default function AccountsWorkspace({ onNavigate }: { onNavigate: (screen:
 
         <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">PROPOSALS</span><h3>提案書・資料（リンク）</h3></div><span>{detail.proposals.length}件</span></div><div className="activity-ledger">{detail.proposals.length === 0 && <p className="queue-empty">資料はまだ登録されていません。</p>}{detail.proposals.map((p) => <article key={p.id}><span className="activity-index" /><div><b>{p.title}</b><p><a href={p.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#16324f" }}>リンクを開く <ExternalLink size={12} /></a></p></div><Status tone="neutral">{p.type}</Status><button onClick={() => removeProposal(p.id)} aria-label="削除" style={{ marginLeft: 8 }}><Trash2 size={13} /></button></article>)}<div style={{ display: "flex", gap: 6, padding: "10px 0" }}><input placeholder="資料名" value={newProposalTitle} onChange={(e) => setNewProposalTitle(e.target.value)} style={{ flex: 1, border: "1px solid var(--rule)", borderRadius: 6, padding: 6, fontSize: 12 }} /><input placeholder="URL（Googleドライブ等）" value={newProposalUrl} onChange={(e) => setNewProposalUrl(e.target.value)} style={{ flex: 2, border: "1px solid var(--rule)", borderRadius: 6, padding: 6, fontSize: 12 }} /><select value={newProposalType} onChange={(e) => setNewProposalType(e.target.value)} style={{ border: "1px solid var(--rule)", borderRadius: 6, fontSize: 12 }}>{PROPOSAL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select><button className="context-link" onClick={addProposal}>追加</button></div></div></section>
 
-        <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">MEETING HISTORY</span><h3>過去の商談履歴</h3></div><span>{detail.meetings.length}件</span></div><div className="activity-ledger">{detail.meetings.length === 0 && <p className="queue-empty">商談記録がありません。</p>}{detail.meetings.slice(0, 10).map((m, i) => <article key={m.id}><span className="activity-index">{String(i + 1).padStart(2, "0")}</span><div><b>{m.contact ? `${m.contact}` : "商談"}{m.format ? `（${m.format}）` : ""}</b><p>{m.content ? m.content.slice(0, 160) : "内容の記録はありません。"}</p><small>{m.meeting_date ?? "日付不明"}</small></div><Status tone={m.summary_status === "approved" ? "moss" : "neutral"}>{m.summary_status === "approved" ? "確定済み" : "商談"}</Status></article>)}</div></section>
+        <section className="ledger-section"><div className="ledger-heading"><div><span className="eyebrow">MEETING HISTORY</span><h3>過去の商談履歴</h3></div><span>{detail.meetings.length}件</span></div><div className="activity-ledger">
+          {detail.meetings.length === 0 && <p className="queue-empty">商談記録がありません。</p>}
+          {(showAllMeetings ? detail.meetings : detail.meetings.slice(0, 10)).map((m, i) => {
+            const expanded = expandedMeetingId === m.id;
+            return <article key={m.id}>
+              <span className="activity-index">{String(i + 1).padStart(2, "0")}</span>
+              <div>
+                <b>{m.contact ? `${m.contact}` : "商談"}{m.format ? `（${m.format}）` : ""}</b>
+                {expanded && m.summary_status === "approved" && <div className="meeting-hearing">
+                  {m.issue && <span><em>課題</em>{m.issue}</span>}
+                  {m.budget && <span><em>予算</em>{m.budget}</span>}
+                  {m.decision_maker && <span><em>決裁</em>{m.decision_maker}</span>}
+                  {m.timeline && <span><em>時期</em>{m.timeline}</span>}
+                </div>}
+                <p className={expanded ? "meeting-body-full" : undefined}>{m.content ? (expanded ? m.content : `${m.content.slice(0, 160)}${m.content.length > 160 ? "…" : ""}`) : "内容の記録はありません。"}</p>
+                {m.content && m.content.length > 160 && <button className="context-link" onClick={() => setExpandedMeetingId(expanded ? null : m.id)}>{expanded ? "閉じる" : "全文を読む"}</button>}
+                <small>{m.meeting_date ? new Date(m.meeting_date).toLocaleDateString("ja-JP") : "日付不明"}</small>
+              </div>
+              <Status tone={m.summary_status === "approved" ? "moss" : "neutral"}>{m.summary_status === "approved" ? "確定済み" : "未確定"}</Status>
+            </article>;
+          })}
+          {detail.meetings.length > 10 && <button className="context-link" style={{ marginTop: 6 }} onClick={() => setShowAllMeetings((v) => !v)}>{showAllMeetings ? "最新10件だけ表示" : `残り${detail.meetings.length - 10}件も表示`}</button>}
+        </div></section>
       </main>
 
       <aside className="context-column">

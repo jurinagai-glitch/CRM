@@ -59,6 +59,30 @@ api.get("/auth/me", (req, res) => {
   res.json({ user });
 });
 
+// 自分のパスワードを変更する。現在のパスワードの確認を必須にし、他人の
+// パスワードは変更できない（対象は常にセッションのユーザー自身）。
+api.post(
+  "/auth/change-password",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { current_password, new_password } = req.body ?? {};
+    const user = (req as unknown as { user: SessionUser }).user;
+    if (!current_password || !new_password) {
+      return res.status(400).json({ error: "現在のパスワードと新しいパスワードを入力してください" });
+    }
+    if (String(new_password).length < 10) {
+      return res.status(400).json({ error: "新しいパスワードは10文字以上にしてください" });
+    }
+    const row = await pool.query("select password_hash from app_users where id = $1", [user.id]);
+    if (!row.rows[0]) return res.status(404).json({ error: "ユーザーが見つかりません" });
+    const ok = await bcrypt.compare(current_password, row.rows[0].password_hash);
+    if (!ok) return res.status(401).json({ error: "現在のパスワードが違います" });
+    const hash = await bcrypt.hash(String(new_password), 10);
+    await pool.query("update app_users set password_hash = $1 where id = $2", [hash, user.id]);
+    res.json({ ok: true });
+  })
+);
+
 const DEAL_STAGES = ["初回接触", "提案", "交渉", "クロージング", "成約", "失注"];
 const DEAL_STATUSES = ["進行中", "成約", "失注"];
 const ACTION_PRIORITIES = ["高", "中", "低"];
