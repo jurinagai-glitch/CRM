@@ -29,9 +29,22 @@ const SYSTEM_PROMPT = `あなたはB2B営業の議事録を読み、CRMに登録
 - 「決裁」は決裁者の役職・氏名だけでなく、稟議の必要性や判断材料も含めて記述する。
 - 「時期」は導入希望日だけでなく、逆算した締切（提案書の期限など）も含めて記述する。
 - 次アクションは、誰が読んでも実行できる具体的な行動として書く。
+- 議事録に「やること」が複数ある場合は、**1件ずつ別の要素として列挙する**こと。
+  複数のタスクを1つの文にまとめてはいけない。担当者への紹介・連携なども1件として数える。
+- 日付・期間・金額は、議事録に書かれている表記をそのまま引き写すこと。言い換え・概算・補正はしない。
+- 各項目には確定した内容のみを書く。推敲の跡や「〜ではない」といった否定・訂正の表現は出力しない。
+- 要約は最大5行に収め、課題・予算・決裁・時期は各1〜2文にまとめること。
+- 出力は必ず日本語のみで書くこと。中国語（簡体字・繁体字）や英語を混在させない。
 
 出力は必ず次のキーを持つJSONオブジェクトのみとし、前後に説明文を付けないこと:
 {"summary": "3〜5行の箇条書き要約（各行は「・」で始める）", "decisions": ["決まったこと"], "issue": "課題", "budget": "予算", "decision_maker": "決裁", "timeline": "時期", "actions": ["次アクション"]}`;
+
+// Groq's free tier enforces an output-tokens-per-minute cap of 1,000 and
+// rejects the request outright (429) if max_tokens alone exceeds it — so this
+// must stay under that, not merely under the model's context window. A complete
+// extraction of this shape measures ~500-800 tokens. Raise via
+// EXTRACTION_MAX_OUTPUT_TOKENS on a paid tier or a local model.
+const MAX_OUTPUT_TOKENS = Number(process.env.EXTRACTION_MAX_OUTPUT_TOKENS) || 900;
 
 // JSON Schema for providers that support response_format json_schema. Providers
 // that only support basic JSON mode fall back to that automatically below.
@@ -95,7 +108,7 @@ export async function extractWithLlm(raw: string): Promise<ExtractionResult> {
     const res = await client.chat.completions.create({
       model,
       messages,
-      max_tokens: 2000,
+      max_tokens: MAX_OUTPUT_TOKENS,
       response_format: { type: "json_schema", json_schema: JSON_SCHEMA },
     });
     content = res.choices[0]?.message?.content;
@@ -103,7 +116,7 @@ export async function extractWithLlm(raw: string): Promise<ExtractionResult> {
     const res = await client.chat.completions.create({
       model,
       messages,
-      max_tokens: 2000,
+      max_tokens: MAX_OUTPUT_TOKENS,
       response_format: { type: "json_object" },
     });
     content = res.choices[0]?.message?.content;
