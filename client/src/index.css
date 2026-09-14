@@ -72,4 +72,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .checkbox-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border: 1px solid var(--rule); border-radius: var(--border-radius-full); background: var(--surface); color: var(--ink-strong); font-size: 11px; cursor: pointer; }
 .checkbox-chip:has(input:checked) { border-color: var(--ink); background: var(--accent-bg); color: var(--ink); font-weight: 700; }
 .checkbox-chip input { margin: 0; accent-color: var(--ink); }
+/* Industry playbook: the thing a new person is sent to read before pitching. */
+.playbook { padding: 20px 22px; border: 1px solid var(--rule); border-radius: var(--border-radius-8); background: var(--surface); box-shadow: var(--elevation-1); }
+.playbook > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.playbook > header h3 { margin: 4px 0 0; color: var(--ink-strong); font-size: 17px; }
+.playbook-alert { margin: 12px 0 0; padding: 9px 11px; border-left: 3px solid var(--warn); background: var(--warn-bg); color: var(--ink-strong); font-size: 12px; }
+.playbook section { padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.playbook section:last-of-type { border-bottom: 0; }
+.playbook h4 { margin: 0 0 6px; color: var(--ink); font-size: 12px; }
+.playbook p { margin: 0; color: var(--ink-strong); font-size: 12px; line-height: 1.85; white-space: pre-wrap; }
+.objection { margin-bottom: 10px; padding-left: 10px; border-left: 2px solid var(--rule); }
+.objection:last-child { margin-bottom: 0; }
+.objection-said { color: var(--ink-muted); font-size: 12px; }
+.objection-reply { margin-top: 3px !important; color: var(--ink); font-size: 12px; font-weight: 700; }
+.playbook > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--ink-muted); font-size: 10px; }
 @media (max-width: 900px) { .kanban-board { grid-template-columns: 1fr; } }

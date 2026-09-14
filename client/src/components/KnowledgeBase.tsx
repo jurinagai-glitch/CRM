@@ -8,17 +8,76 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api";
 
+type Objection = { objection: string; response: string };
+
 type KnowledgeItem = {
   id: string;
+  kind: string;
   title: string;
   body: string | null;
   tags: string[];
   source_company_id: string | null;
   source_company_name: string | null;
   created_at: string;
+  business_type: string | null;
+  approach: string | null;
+  objections: Objection[];
+  decision_process: string | null;
+  price_expectation: string | null;
+  competitors: string | null;
+  market_status: string | null;
+  source_note_count: number;
+  generated_model: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
 };
 
 const TOPIC_FILTERS = ["初回商談", "課題探索", "価格・競合", "提案設計"];
+
+function Playbook({ item, onReviewed }: { item: KnowledgeItem; onReviewed: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const confirm = async () => {
+    setBusy(true);
+    const ok = await apiRequest(`/api/knowledge-items/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewed: true }),
+    });
+    setBusy(false);
+    if (!ok) return;
+    toast.success("確認済みにしました");
+    onReviewed();
+  };
+
+  return <article className="playbook">
+    <header>
+      <div>
+        <span className="eyebrow">PLAYBOOK</span>
+        <h3>{item.title}</h3>
+      </div>
+      {item.reviewed_at
+        ? <span className="status-pill moss">{item.reviewed_by}が確認済み</span>
+        : <span className="status-pill ochre">AI下書き・未確認</span>}
+    </header>
+    {item.body && <p className="playbook-alert">{item.body}</p>}
+    {item.approach && <section><h4>刺さる切り口</h4><p>{item.approach}</p></section>}
+    {item.objections?.length > 0 && <section>
+      <h4>よく言われること と 返し方</h4>
+      {item.objections.map((o, i) => <div className="objection" key={i}>
+        <p className="objection-said">「{o.objection}」</p>
+        {o.response && <p className="objection-reply">→ {o.response}</p>}
+      </div>)}
+    </section>}
+    {item.decision_process && <section><h4>決裁の通り方</h4><p>{item.decision_process}</p></section>}
+    {item.price_expectation && <section><h4>相場観</h4><p>{item.price_expectation}</p></section>}
+    {item.competitors && <section><h4>競合</h4><p>{item.competitors}</p></section>}
+    {item.market_status && <section><h4>この業種の現状</h4><p>{item.market_status}</p></section>}
+    <footer>
+      <span>商談記録{item.source_note_count}件から作成{item.generated_model ? `（${item.generated_model}）` : ""}</span>
+      {!item.reviewed_at && <Button className="ink-button" onClick={confirm} disabled={busy}>{busy ? "確認中..." : "内容を確認した"}</Button>}
+    </footer>
+  </article>;
+}
 
 function StatusPill({ children }: { children: string }) {
   return <span className="status-pill">{children}</span>;
@@ -84,7 +143,8 @@ export default function KnowledgeBase() {
     </div>
     <div className="knowledge-layout">
       <div className="knowledge-list">
-        {items.map((item) => <button className="knowledge-card" key={item.id} onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>
+        {items.filter((i) => i.kind === "業種プレイブック").map((item) => <Playbook key={item.id} item={item} onReviewed={load} />)}
+        {items.filter((i) => i.kind !== "業種プレイブック").map((item) => <button className="knowledge-card" key={item.id} onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>
           <div><span className="paper-dot" /> <small>{item.source_company_name ?? "チーム共通"}・{new Date(item.created_at).toLocaleDateString("ja-JP")}</small></div>
           <h3>{item.title}</h3>
           <p>{expandedId === item.id ? (item.body || "詳細は登録されていません。") : (item.body ? `${item.body.slice(0, 60)}${item.body.length > 60 ? "…" : ""}` : "詳細は登録されていません。")}</p>

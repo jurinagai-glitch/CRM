@@ -773,22 +773,59 @@ api.get(
     const conditions: string[] = [];
     if (q) {
       params.push(`%${q}%`);
-      conditions.push(`(title ilike $${params.length} or body ilike $${params.length})`);
+      conditions.push(`(title ilike $${params.length} or body ilike $${params.length} or approach ilike $${params.length} or objections::text ilike $${params.length})`);
     }
     if (tag) {
       params.push(tag);
       conditions.push(`$${params.length} = any(tags)`);
     }
+    if (typeof req.query.business_type === "string" && req.query.business_type) {
+      params.push(req.query.business_type);
+      conditions.push(`business_type = $${params.length}`);
+    }
     const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
     const result = await pool.query(
-      `select k.*, c.name as source_company_name
+      `select k.*, c.name as source_company_name,
+              coalesce(array_length(k.source_note_ids, 1), 0) as source_note_count
        from knowledge_items k
        left join companies c on c.id = k.source_company_id
        ${where}
-       order by k.created_at desc`,
+       -- playbooks first: they're the thing a new person is sent to read
+       order by (k.kind = '業種プレイブック') desc, k.created_at desc`,
       params
     );
     res.json({ items: result.rows });
+  })
+);
+
+// Edit a playbook and/or mark it reviewed. An AI draft stays visibly a draft
+// until a person confirms it, so nobody treats a generated claim as established.
+api.patch(
+  "/knowledge-items/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { approach, objections, decision_process, price_expectation, competitors, market_status, body, reviewed } = req.body ?? {};
+    const user = (req as unknown as { user: SessionUser }).user;
+    const result = await pool.query(
+      `update knowledge_items set
+         approach = coalesce($1, approach),
+         objections = coalesce($2, objections),
+         decision_process = coalesce($3, decision_process),
+         price_expectation = coalesce($4, price_expectation),
+         competitors = coalesce($5, competitors),
+         market_status = coalesce($6, market_status),
+         body = coalesce($7, body),
+         reviewed_by = case when $8::boolean then $9 else reviewed_by end,
+         reviewed_at = case when $8::boolean then now() else reviewed_at end
+       where id = $10 returning *`,
+      [
+        approach ?? null, objections ? JSON.stringify(objections) : null, decision_process ?? null,
+        price_expectation ?? null, competitors ?? null, market_status ?? null, body ?? null,
+        reviewed === true, user?.name ?? user?.email ?? null, req.params.id,
+      ]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "ナレッジが見つかりません" });
+    res.json({ item: result.rows[0] });
   })
 );
 
