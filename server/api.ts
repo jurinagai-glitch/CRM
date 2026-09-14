@@ -117,7 +117,7 @@ api.get(
       ? `(select max(m.meeting_date) from meeting_notes m where m.company_id = companies.id) desc nulls last, name asc`
       : `meeting_count desc, name asc`;
     const result = await pool.query(
-      `select id, name, category, name_variants, meeting_count, created_at,
+      `select id, name, category, business_type, business_type_source, name_variants, meeting_count, created_at,
          (select max(m.meeting_date) from meeting_notes m where m.company_id = companies.id) as last_meeting_date
        from companies ${where}
        order by ${orderBy}
